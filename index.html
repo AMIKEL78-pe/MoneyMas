@@ -299,10 +299,11 @@
   .budget-restante.neg{color:var(--rojo);}
   .budget-restante-lbl{font-size:12px;color:var(--gris-medio);margin-bottom:2px;}
 
-  .rec-row{display:flex;justify-content:space-between;align-items:center;padding:12px 4px;border-bottom:1px solid #F0F1F3;}
+  .rec-row{display:flex;justify-content:space-between;align-items:center;padding:12px 4px;border-bottom:1px solid #F0F1F3;gap:10px;}
   .rec-name{font-size:14px;font-weight:600;color:var(--gris-oscuro);}
   .rec-sub{font-size:11px;color:var(--gris-medio);}
-  .rec-amount{font-size:14px;font-weight:700;color:var(--gris-oscuro);}
+  .rec-amount{font-size:14px;font-weight:700;color:var(--gris-oscuro);white-space:nowrap;}
+  .rec-right{display:flex;align-items:center;gap:10px;}
 
   .cat-track-item{margin-bottom:14px;}
   .cat-track-row{display:flex;justify-content:space-between;font-size:12px;color:var(--gris-oscuro);margin-bottom:5px;}
@@ -345,23 +346,22 @@
   /* Toast */
   .toast{
     position:absolute;
-    left:18px;right:18px;top:40px;
+    left:18px;right:18px;top:52px;
     background:var(--gris-oscuro);
     color:#fff;
-    padding:12px 16px;
+    padding:13px 18px;
     border-radius:12px;
     font-size:13px;
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    gap:12px;
-    box-shadow:0 8px 20px rgba(0,0,0,.25);
-    transform:translateY(-140%);
+    font-weight:600;
+    text-align:center;
+    box-shadow:0 10px 24px rgba(0,0,0,.3);
+    border:1px solid rgba(255,255,255,.08);
+    transform:translateY(-160%);
     transition:transform .25s ease;
     z-index:40;
     pointer-events:none;
   }
-  .toast.show{transform:translateY(0);pointer-events:auto;}
+  .toast.show{transform:translateY(0);}
   .toast button{background:none;border:none;color:#93C5FD;font-weight:700;font-size:13px;cursor:pointer;}
 
   /* Modal */
@@ -556,7 +556,6 @@
 
   <div class="toast" id="toast">
     <span id="toast-msg"></span>
-    <button onclick="deshacer()">Deshacer</button>
   </div>
 
   <!-- Modal: nueva cuenta -->
@@ -626,6 +625,24 @@
         <option value="Anual">Anual</option>
       </select>
       <button class="btn-primary" onclick="guardarRecurrente()">Guardar pago recurrente</button>
+    </div>
+  </div>
+
+  <!-- Modal: editar pago recurrente -->
+  <div class="modal-overlay" id="modal-editar-recurrente">
+    <div class="modal">
+      <button class="modal-close" onclick="cerrarModal('modal-editar-recurrente')">Cerrar</button>
+      <h3>Editar pago recurrente</h3>
+      <input type="text" id="er-nombre" placeholder="Nombre del pago">
+      <input type="number" id="er-monto" placeholder="Monto">
+      <input type="number" id="er-dia" placeholder="Día de cobro (1-31)" min="1" max="31">
+      <select id="er-cuenta"></select>
+      <select id="er-frecuencia">
+        <option value="Mensual">Mensual</option>
+        <option value="Anual">Anual</option>
+      </select>
+      <button class="btn-primary" onclick="guardarEdicionRecurrente()">Guardar cambios</button>
+      <input type="hidden" id="er-id">
     </div>
   </div>
 
@@ -746,7 +763,6 @@ let recurrentes = [
 ];
 let nextId = 5;
 let nextRecId = 6;
-let ultimaAccion = null;
 let metaMensual = 1500;
 
 let tipoSeleccionado = "gasto";
@@ -813,30 +829,17 @@ function registrarMovimiento(){
   transacciones.unshift(tx);
   const cuenta = cuentas.find(c=>c.id===cuentaSeleccionada);
   cuenta.saldo += tipoSeleccionado==="ingreso" ? monto : -monto;
-  ultimaAccion = {txId: tx.id, cuentaId: cuenta.id, tipo: tx.tipo, monto: monto};
 
   document.getElementById("monto-input").value = "";
   renderInicio();
   mostrarToast("Movimiento registrado: " + (tipoSeleccionado==="gasto" ? "-" : "+") + " S/. " + monto.toFixed(2));
-}
-function deshacer(){
-  if(!ultimaAccion) return;
-  transacciones = transacciones.filter(t=>t.id!==ultimaAccion.txId);
-  const cuenta = cuentas.find(c=>c.id===ultimaAccion.cuentaId);
-  cuenta.saldo -= ultimaAccion.tipo==="ingreso" ? ultimaAccion.monto : -ultimaAccion.monto;
-  ultimaAccion = null;
-  ocultarToast();
-  renderInicio();
-  if(document.getElementById("screen-informes").classList.contains("active")) renderInformes();
-  if(document.getElementById("screen-movimientos").classList.contains("active")) renderMovimientos();
-  if(document.getElementById("screen-presupuesto").classList.contains("active")) renderPresupuesto();
 }
 function mostrarToast(msg){
   document.getElementById("toast-msg").textContent = msg;
   const t = document.getElementById("toast");
   t.classList.add("show");
   clearTimeout(window._toastTimer);
-  window._toastTimer = setTimeout(ocultarToast, 3000);
+  window._toastTimer = setTimeout(ocultarToast, 2500);
 }
 function ocultarToast(){ document.getElementById("toast").classList.remove("show"); }
 
@@ -1042,18 +1045,7 @@ function guardarEdicionTx(){
   renderInformes();
   renderMovimientos();
   renderPresupuesto();
-  mostrarToastSimple("Movimiento actualizado");
-}
-function mostrarToastSimple(msg){
-  document.getElementById("toast-msg").textContent = msg;
-  document.querySelector(".toast button").style.display = "none";
-  const t = document.getElementById("toast");
-  t.classList.add("show");
-  clearTimeout(window._toastTimer);
-  window._toastTimer = setTimeout(()=>{
-    ocultarToast();
-    document.querySelector(".toast button").style.display = "";
-  }, 2500);
+  mostrarToast("Movimiento actualizado");
 }
 function eliminarTransaccion(id, refrescarMov){
   const t = transacciones.find(x=>x.id===id);
@@ -1174,7 +1166,13 @@ function renderPresupuesto(){
         <div class="rec-name">${r.nombre}</div>
         <div class="rec-sub">${r.frecuencia} · día ${diaReal} · ${cuenta?cuenta.nombre:"—"}</div>
       </div>
-      <div class="rec-amount">S/. ${r.monto.toFixed(2)}</div>
+      <div class="rec-right">
+        <div class="rec-amount">S/. ${r.monto.toFixed(2)}</div>
+        <div class="tx-actions">
+          <button class="tx-action-btn edit" aria-label="Editar pago recurrente" onclick="abrirEditarRecurrente(${r.id})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
+          <button class="tx-action-btn del" aria-label="Eliminar pago recurrente" onclick="eliminarRecurrente(${r.id})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+        </div>
+      </div>
     `;
     wrap.appendChild(row);
   });
@@ -1199,6 +1197,47 @@ function renderPresupuesto(){
     `;
     segWrap.appendChild(item);
   });
+}
+function abrirEditarRecurrente(id){
+  const r = recurrentes.find(x=>x.id===id);
+  if(!r) return;
+  document.getElementById("er-id").value = r.id;
+  document.getElementById("er-nombre").value = r.nombre;
+  document.getElementById("er-monto").value = r.monto;
+  document.getElementById("er-dia").value = r.dia;
+  document.getElementById("er-frecuencia").value = r.frecuencia;
+  const selCuenta = document.getElementById("er-cuenta");
+  selCuenta.innerHTML = "";
+  cuentas.forEach(c=>{
+    const o = document.createElement("option");
+    o.value = c.id; o.textContent = c.nombre;
+    if(c.id===r.cuentaId) o.selected = true;
+    selCuenta.appendChild(o);
+  });
+  abrirModal("modal-editar-recurrente");
+}
+function guardarEdicionRecurrente(){
+  const id = parseInt(document.getElementById("er-id").value);
+  const r = recurrentes.find(x=>x.id===id);
+  if(!r) return;
+  const nombre = document.getElementById("er-nombre").value.trim();
+  const monto = parseFloat(document.getElementById("er-monto").value);
+  const dia = parseInt(document.getElementById("er-dia").value);
+  if(!nombre || !monto || !dia){ return; }
+  r.nombre = nombre;
+  r.monto = monto;
+  r.dia = Math.min(Math.max(dia,1),31);
+  r.cuentaId = parseInt(document.getElementById("er-cuenta").value);
+  r.frecuencia = document.getElementById("er-frecuencia").value;
+  cerrarModal("modal-editar-recurrente");
+  renderPresupuesto();
+}
+function eliminarRecurrente(id){
+  const r = recurrentes.find(x=>x.id===id);
+  if(!r) return;
+  if(!confirm(`¿Eliminar el pago recurrente "${r.nombre}"?`)) return;
+  recurrentes = recurrentes.filter(x=>x.id!==id);
+  renderPresupuesto();
 }
 function actualizarMeta(){
   const v = parseFloat(document.getElementById("meta-input").value);
