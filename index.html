@@ -491,6 +491,7 @@
           <div style="font-size:15px;font-weight:700;color:var(--gris-oscuro);" id="budget-gastado">S/. 0</div>
         </div>
       </div>
+      <div style="text-align:right;font-size:10px;color:var(--gris-medio);margin-top:2px;" id="budget-gastado-detalle"></div>
     </div>
 
     <div class="section-title" style="margin-top:0;">Mis pagos fijos (recurrentes)</div>
@@ -620,9 +621,15 @@
       <input type="number" id="nr-monto" placeholder="Monto">
       <input type="number" id="nr-dia" placeholder="Día de cobro (1-31)" min="1" max="31">
       <select id="nr-cuenta"></select>
-      <select id="nr-frecuencia">
+      <select id="nr-frecuencia" onchange="toggleMesCobro('nr')">
         <option value="Mensual">Mensual</option>
         <option value="Anual">Anual</option>
+      </select>
+      <select id="nr-mes" style="display:none;">
+        <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+        <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+        <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+        <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
       </select>
       <button class="btn-primary" onclick="guardarRecurrente()">Guardar pago recurrente</button>
     </div>
@@ -637,9 +644,15 @@
       <input type="number" id="er-monto" placeholder="Monto">
       <input type="number" id="er-dia" placeholder="Día de cobro (1-31)" min="1" max="31">
       <select id="er-cuenta"></select>
-      <select id="er-frecuencia">
+      <select id="er-frecuencia" onchange="toggleMesCobro('er')">
         <option value="Mensual">Mensual</option>
         <option value="Anual">Anual</option>
+      </select>
+      <select id="er-mes" style="display:none;">
+        <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+        <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+        <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+        <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
       </select>
       <button class="btn-primary" onclick="guardarEdicionRecurrente()">Guardar cambios</button>
       <input type="hidden" id="er-id">
@@ -755,11 +768,11 @@ let transacciones = [
   {id:4, tipo:"gasto", monto:900, categoria:"Vivienda y servicios", cuentaId:2, fecha:new Date()}
 ];
 let recurrentes = [
-  {id:1, nombre:"Alquiler", monto:900, dia:1, cuentaId:2, frecuencia:"Mensual"},
-  {id:2, nombre:"Netflix", monto:35, dia:5, cuentaId:2, frecuencia:"Mensual"},
-  {id:3, nombre:"Internet", monto:120, dia:10, cuentaId:2, frecuencia:"Mensual"},
-  {id:4, nombre:"Gimnasio", monto:90, dia:15, cuentaId:1, frecuencia:"Mensual"},
-  {id:5, nombre:"Seguro", monto:600, dia:20, cuentaId:2, frecuencia:"Anual"}
+  {id:1, nombre:"Alquiler", monto:900, dia:1, cuentaId:2, frecuencia:"Mensual", mesCobro:null},
+  {id:2, nombre:"Netflix", monto:35, dia:5, cuentaId:2, frecuencia:"Mensual", mesCobro:null},
+  {id:3, nombre:"Internet", monto:120, dia:10, cuentaId:2, frecuencia:"Mensual", mesCobro:null},
+  {id:4, nombre:"Gimnasio", monto:90, dia:15, cuentaId:1, frecuencia:"Mensual", mesCobro:null},
+  {id:5, nombre:"Seguro", monto:600, dia:20, cuentaId:2, frecuencia:"Anual", mesCobro:new Date().getMonth()+1}
 ];
 let nextId = 5;
 let nextRecId = 6;
@@ -1133,10 +1146,17 @@ function normalizarDia(dia, year, month){
   const ultimoDia = new Date(year, month+1, 0).getDate();
   return Math.min(dia, ultimoDia);
 }
+function aplicaEsteMes(r){
+  const mesActual = new Date().getMonth()+1;
+  if(r.frecuencia==="Mensual") return true;
+  return r.mesCobro === mesActual;
+}
 function renderPresupuesto(){
   document.getElementById("meta-input").value = metaMensual.toFixed(0);
   const txsMes = filtrarPorPeriodo("mes").filter(t=>t.tipo==="gasto");
-  const gastado = txsMes.reduce((a,t)=>a+t.monto,0);
+  const gastadoReal = txsMes.reduce((a,t)=>a+t.monto,0);
+  const gastadoRecurrentes = recurrentes.filter(aplicaEsteMes).reduce((a,r)=>a+r.monto,0);
+  const gastado = gastadoReal + gastadoRecurrentes;
   const pct = metaMensual>0 ? Math.min(100,(gastado/metaMensual)*100) : 0;
   const fill = document.getElementById("budget-fill-lg");
   fill.style.width = pct + "%";
@@ -1148,6 +1168,8 @@ function renderPresupuesto(){
   rEl.classList.toggle("pos", restante>=0);
   rEl.classList.toggle("neg", restante<0);
   document.getElementById("budget-gastado").textContent = "S/. " + gastado.toFixed(2);
+  document.getElementById("budget-gastado-detalle").textContent =
+    gastadoRecurrentes>0 ? `S/. ${gastadoReal.toFixed(2)} en gastos + S/. ${gastadoRecurrentes.toFixed(2)} en pagos fijos` : "";
 
   // Recurrentes
   const wrap = document.getElementById("lista-recurrentes");
@@ -1158,13 +1180,17 @@ function renderPresupuesto(){
   }
   recurrentes.forEach(r=>{
     const cuenta = cuentas.find(c=>c.id===r.cuentaId);
-    const diaReal = normalizarDia(r.dia, hoy.getFullYear(), hoy.getMonth());
+    const mesRef = r.frecuencia==="Anual" && r.mesCobro ? r.mesCobro-1 : hoy.getMonth();
+    const diaReal = normalizarDia(r.dia, hoy.getFullYear(), mesRef);
+    const aplicaTxt = r.frecuencia==="Mensual"
+      ? `Mensual · día ${diaReal}`
+      : `Anual · ${MESES[(r.mesCobro||1)-1]} · día ${diaReal}` + (aplicaEsteMes(r) ? " · aplica este mes" : "");
     const row = document.createElement("div");
     row.className = "rec-row";
     row.innerHTML = `
       <div>
         <div class="rec-name">${r.nombre}</div>
-        <div class="rec-sub">${r.frecuencia} · día ${diaReal} · ${cuenta?cuenta.nombre:"—"}</div>
+        <div class="rec-sub">${aplicaTxt} · ${cuenta?cuenta.nombre:"—"}</div>
       </div>
       <div class="rec-right">
         <div class="rec-amount">S/. ${r.monto.toFixed(2)}</div>
@@ -1206,6 +1232,8 @@ function abrirEditarRecurrente(id){
   document.getElementById("er-monto").value = r.monto;
   document.getElementById("er-dia").value = r.dia;
   document.getElementById("er-frecuencia").value = r.frecuencia;
+  document.getElementById("er-mes").value = r.mesCobro || (new Date().getMonth()+1);
+  toggleMesCobro("er");
   const selCuenta = document.getElementById("er-cuenta");
   selCuenta.innerHTML = "";
   cuentas.forEach(c=>{
@@ -1229,6 +1257,7 @@ function guardarEdicionRecurrente(){
   r.dia = Math.min(Math.max(dia,1),31);
   r.cuentaId = parseInt(document.getElementById("er-cuenta").value);
   r.frecuencia = document.getElementById("er-frecuencia").value;
+  r.mesCobro = r.frecuencia==="Anual" ? parseInt(document.getElementById("er-mes").value) : null;
   cerrarModal("modal-editar-recurrente");
   renderPresupuesto();
 }
@@ -1244,17 +1273,24 @@ function actualizarMeta(){
   metaMensual = v>0 ? v : metaMensual;
   renderPresupuesto();
 }
+function toggleMesCobro(prefijo){
+  const freq = document.getElementById(prefijo+"-frecuencia").value;
+  document.getElementById(prefijo+"-mes").style.display = freq==="Anual" ? "block" : "none";
+}
 function guardarRecurrente(){
   const nombre = document.getElementById("nr-nombre").value.trim();
   const monto = parseFloat(document.getElementById("nr-monto").value);
   const dia = parseInt(document.getElementById("nr-dia").value);
   const cuentaId = parseInt(document.getElementById("nr-cuenta").value);
   const frecuencia = document.getElementById("nr-frecuencia").value;
+  const mesCobro = frecuencia==="Anual" ? parseInt(document.getElementById("nr-mes").value) : null;
   if(!nombre || !monto || !dia){ return; }
-  recurrentes.push({id:nextRecId++, nombre, monto, dia:Math.min(Math.max(dia,1),31), cuentaId, frecuencia});
+  recurrentes.push({id:nextRecId++, nombre, monto, dia:Math.min(Math.max(dia,1),31), cuentaId, frecuencia, mesCobro});
   document.getElementById("nr-nombre").value = "";
   document.getElementById("nr-monto").value = "";
   document.getElementById("nr-dia").value = "";
+  document.getElementById("nr-frecuencia").value = "Mensual";
+  toggleMesCobro("nr");
   cerrarModal("modal-recurrente");
   renderPresupuesto();
 }
@@ -1350,7 +1386,7 @@ function eliminarCuenta(id){
   renderInicio();
 }
 function abrirModal(id){
-  if(id==="modal-recurrente") renderCuentas();
+  if(id==="modal-recurrente"){ renderCuentas(); toggleMesCobro("nr"); }
   document.getElementById(id).classList.add("show");
 }
 function cerrarModal(id){ document.getElementById(id).classList.remove("show"); }
