@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>MoneyMas — Prototipo</title>
 <style>
   :root{
@@ -23,54 +23,78 @@
     --rojo:#E11D48;
     --rojo-bg:#FFF1F2;
     --blanco:#FFFFFF;
-    --radius:18px;
+    --radius:16px;
     --font-display:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --shadow-card:0 2px 8px rgba(15,23,42,.04);
+    /* Sistema de espaciado en base 8px */
+    --space-1:8px;
+    --space-2:16px;
+    --space-3:24px;
+    --space-4:32px;
+    /* Zona táctil mínima recomendada */
+    --touch-min:44px;
   }
   *{box-sizing:border-box;}
+  html{height:100%;}
   body{
     margin:0;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     background:#E7ECF3;
     display:flex;
     justify-content:center;
-    padding:32px 12px;
-    min-height:100vh;
+    min-height:100dvh; /* dvh: evita saltos al mostrar/ocultar la barra del navegador móvil */
   }
-  .phone{
-    width:390px;
-    max-width:100%;
+  /* ============================================================
+     .app-container — contenedor principal real (mobile-first)
+     - max-width 480px + margin auto: centra el contenido en
+       pantallas anchas sin que la app se estire de forma absurda.
+     - Grid de una columna (header / contenido scrollable / nav fija).
+     - Sin bisel decorativo: en producción no hay "marco de celular"
+       falso, la app ocupa la pantalla real del dispositivo.
+     ============================================================ */
+  /* ============================================================
+     .app-container — contenedor principal real (mobile-first)
+     - max-width 480px + margin auto: centra el contenido en
+       pantallas anchas sin que la app se estire de forma absurda.
+     - Flexbox en columna para el armazón (contenido scrollable +
+       nav inferior fija) — es el layout correcto aquí porque varias
+       pantallas ".screen" son hermanas y alternan con display:none.
+       CSS Grid se usa dentro de los componentes (formularios,
+       tarjetas de resumen, filas de participantes, etc. — ver más abajo).
+     - Sin bisel decorativo: en producción no hay "marco de celular"
+       falso, la app ocupa la pantalla real del dispositivo.
+     ============================================================ */
+  .app-container{
+    width:100%;
+    max-width:480px;
+    margin:0 auto;
     background:var(--fondo);
-    border-radius:38px;
-    border:10px solid var(--azul-900);
-    outline:3px solid var(--oro);
-    outline-offset:3px;
-    box-shadow:0 24px 60px rgba(11,37,69,.35);
-    overflow:hidden;
-    position:relative;
-    min-height:800px;
     display:flex;
     flex-direction:column;
+    min-height:100dvh;
+    position:relative;
+    overflow:hidden;
   }
-  .statusbar{
-    height:30px;
-    background:var(--azul-900);
-    color:var(--oro-light);
-    font-size:11px;
-    font-weight:600;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    letter-spacing:2px;
+  @media (min-width:481px){
+    body{padding:var(--space-3) var(--space-2);}
+    .app-container{
+      min-height:calc(100dvh - 48px);
+      border-radius:24px;
+      box-shadow:0 24px 60px rgba(11,37,69,.18);
+    }
   }
   .screen{
     flex:1;
     overflow-y:auto;
-    padding:22px 18px 14px;
+    /* Relleno lateral 16-20px + safe-area real para notch/isla dinámica */
+    padding-left:max(20px, env(safe-area-inset-left));
+    padding-right:max(20px, env(safe-area-inset-right));
+    padding-top:max(20px, env(safe-area-inset-top));
+    padding-bottom:var(--space-2);
     display:none;
   }
   .screen.active{display:block;}
-  h1.app-title{font-family:var(--font-display);font-size:23px;font-weight:700;color:var(--azul-900);margin:0;letter-spacing:.2px;}
+  h1.app-title{font-family:var(--font-display);font-size:clamp(1.25rem, 5vw, 1.5rem);font-weight:700;color:var(--azul-900);margin:0;letter-spacing:.2px;}
   .top-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
   .bell{width:22px;height:22px;color:var(--azul-900);}
 
@@ -88,7 +112,7 @@
     background:radial-gradient(circle,rgba(37,99,235,.35) 0%,rgba(37,99,235,0) 70%);
   }
   .balance-label{font-size:12px;color:var(--oro-light);letter-spacing:.4px;text-transform:uppercase;margin-bottom:6px;font-weight:600;}
-  .balance-value{font-family:var(--font-display);font-size:32px;font-weight:700;color:#fff;margin-bottom:10px;}
+  .balance-value{font-family:var(--font-display);font-size:clamp(1.7rem, 8vw, 2.1rem);font-weight:700;color:#fff;margin-bottom:10px;}
   .balance-detail{font-size:12px;color:rgba(255,255,255,.75);border-top:1px solid rgba(147,197,253,.35);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;}
   .balance-chip{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:20px;padding:5px 10px;font-size:11.5px;font-weight:600;color:#fff;}
 
@@ -97,7 +121,7 @@
     width:100%;
     text-align:center;
     font-family:var(--font-display);
-    font-size:40px;
+    font-size:clamp(2rem, 11vw, 2.6rem);
     font-weight:700;
     color:var(--azul-900);
     border:none;
@@ -121,7 +145,10 @@
   .pill-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;}
   .pill{
     white-space:nowrap;
-    padding:10px 18px;
+    min-height:var(--touch-min);
+    display:inline-flex;
+    align-items:center;
+    padding:0 18px;
     border-radius:22px;
     border:2px solid var(--gris-claro);
     background:var(--blanco);
@@ -192,14 +219,19 @@
     display:flex;
     justify-content:space-around;
     align-items:center;
-    padding:12px 0 18px;
+    padding-top:var(--space-1);
+    padding-bottom:max(var(--space-1), env(safe-area-inset-bottom)); /* respeta la barra de gestos del sistema */
+    padding-left:max(8px, env(safe-area-inset-left));
+    padding-right:max(8px, env(safe-area-inset-right));
     background:var(--azul-900);
     border-top:2px solid var(--oro);
+    flex-shrink:0; /* no se comprime aunque el contenido de arriba sea largo */
   }
   .navitem{
     display:flex;
     flex-direction:column;
     align-items:center;
+    justify-content:center;
     gap:4px;
     color:rgba(255,255,255,.55);
     font-size:9.5px;
@@ -208,7 +240,8 @@
     background:none;
     border:none;
     flex:1;
-    padding:4px 0;
+    min-height:var(--touch-min); /* zona táctil mínima 44px */
+    padding:4px 2px;
   }
   .navitem.active{color:var(--oro);font-weight:700;}
   .navitem svg{width:20px;height:20px;}
@@ -217,7 +250,10 @@
   .tabs{display:flex;gap:6px;margin-bottom:20px;}
   .tab{
     flex:1;
-    padding:11px 0;
+    min-height:var(--touch-min);
+    display:flex;
+    align-items:center;
+    justify-content:center;
     text-align:center;
     border-radius:14px;
     background:var(--gris-claro);
@@ -239,7 +275,7 @@
     display:flex;flex-direction:column;align-items:center;justify-content:center;
   }
   .donut-hole .lbl{font-size:11px;color:var(--gris-medio);}
-  .donut-hole .val{font-family:var(--font-display);font-size:17px;font-weight:700;color:var(--azul-900);}
+  .donut-hole .val{font-family:var(--font-display);font-size:clamp(1rem, 4.5vw, 1.15rem);font-weight:700;color:var(--azul-900);}
 
   .legend{display:flex;flex-wrap:wrap;gap:10px 14px;justify-content:center;margin:14px 0 20px;font-size:12px;color:var(--gris-oscuro);}
   .legend span{display:inline-flex;align-items:center;gap:6px;}
@@ -271,13 +307,13 @@
   .tx-sub{font-size:11px;color:var(--gris-medio);}
   .tx-amount.pos{color:var(--verde);font-weight:700;font-size:14px;white-space:nowrap;}
   .tx-amount.neg{color:var(--rojo);font-weight:700;font-size:14px;white-space:nowrap;}
-  .tx-right{display:flex;align-items:center;gap:10px;}
-  .tx-actions{display:flex;gap:6px;flex-shrink:0;}
+  .tx-right{display:flex;align-items:center;gap:6px;}
+  .tx-actions{display:flex;gap:2px;flex-shrink:0;}
   .tx-action-btn{
-    width:30px;height:30px;border-radius:9px;border:none;
+    width:var(--touch-min);height:var(--touch-min);border-radius:12px;border:none;
     background:var(--gris-claro);
     display:flex;align-items:center;justify-content:center;cursor:pointer;
-    font-size:14px;opacity:.65;transition:opacity .15s,background .15s;
+    font-size:16px;opacity:.7;transition:opacity .15s,background .15s;
   }
   .tx-action-btn:hover, .tx-action-btn:active{opacity:1;}
   .tx-action-btn.edit:hover{background:var(--azul-light);}
@@ -293,16 +329,16 @@
   .acc-right{display:flex;align-items:center;gap:10px;}
 
   .cat-tabs{display:flex;gap:6px;margin:14px 0;}
-  .cat-tab{flex:1;padding:9px 0;text-align:center;border-radius:12px;background:var(--gris-claro);color:var(--gris-medio);font-size:13px;font-weight:700;cursor:pointer;}
+  .cat-tab{flex:1;min-height:var(--touch-min);display:flex;align-items:center;justify-content:center;padding:0 8px;text-align:center;border-radius:12px;background:var(--gris-claro);color:var(--gris-medio);font-size:13px;font-weight:700;cursor:pointer;}
   .cat-tab.active{background:var(--azul-900);color:var(--oro);}
-  .cat-chip{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:20px;background:var(--gris-claro);font-size:13px;margin:0 6px 8px 0;color:var(--gris-oscuro);font-weight:600;}
+  .cat-chip{display:inline-flex;align-items:center;gap:6px;min-height:var(--touch-min);padding:0 16px;border-radius:20px;background:var(--gris-claro);font-size:13px;margin:0 6px 8px 0;color:var(--gris-oscuro);font-weight:600;}
 
   .tool-card{background:var(--blanco);border:1px solid var(--borde);box-shadow:var(--shadow-card);border-radius:16px;padding:15px 17px;margin-bottom:12px;}
   .tool-head{display:flex;justify-content:space-between;align-items:center;}
   .tool-title{font-size:14px;font-weight:700;color:var(--azul-900);}
   .tool-sub{font-size:11.5px;color:var(--gris-medio);margin-top:2px;}
 
-  .switch{position:relative;width:46px;height:26px;flex-shrink:0;}
+  .switch{position:relative;width:50px;height:30px;flex-shrink:0;}
   .switch input{opacity:0;width:0;height:0;}
   .slider{position:absolute;cursor:pointer;inset:0;background:var(--gris-medio);border-radius:26px;transition:.2s;}
   .slider:before{content:"";position:absolute;height:20px;width:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;}
@@ -317,13 +353,13 @@
   .budget-hero{background:linear-gradient(135deg,var(--blanco),#FDFCF7);border-radius:var(--radius);padding:20px 22px;margin-bottom:22px;border:1.5px solid var(--oro-light);box-shadow:var(--shadow-card);}
   .budget-hero-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;}
   .budget-meta-label{font-size:12px;color:var(--gris-medio);font-weight:600;}
-  .budget-meta-input{width:130px;text-align:right;font-family:var(--font-display);font-size:21px;font-weight:700;color:var(--azul-900);border:none;background:transparent;padding:0;margin:0;}
+  .budget-meta-input{width:130px;text-align:right;font-family:var(--font-display);font-size:clamp(1.1rem, 5vw, 1.35rem);font-weight:700;color:var(--azul-900);border:none;background:transparent;padding:0;margin:0;}
   .budget-track-lg{height:15px;background:var(--gris-claro);border-radius:10px;overflow:hidden;margin:11px 0 13px;}
   .budget-fill-lg{height:100%;background:var(--verde);border-radius:10px;transition:width .2s,background .2s;}
   .budget-fill-lg.nivel-verde{background:var(--verde);}
   .budget-fill-lg.nivel-dorado{background:var(--oro);}
   .budget-fill-lg.nivel-rojo{background:var(--rojo);}
-  .budget-restante{font-family:var(--font-display);font-size:23px;font-weight:700;}
+  .budget-restante{font-family:var(--font-display);font-size:clamp(1.25rem, 6vw, 1.5rem);font-weight:700;}
   .budget-restante.pos{color:var(--verde);}
   .budget-restante.neg{color:var(--rojo);}
   .budget-restante-lbl{font-size:12px;color:var(--gris-medio);margin-bottom:2px;font-weight:600;}
@@ -346,12 +382,12 @@
   .junta-progress-row{display:flex;justify-content:space-between;font-size:11px;color:var(--gris-medio);margin-bottom:5px;}
 
   .junta-header-card{background:linear-gradient(135deg,var(--azul-900),var(--azul-800));border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;box-shadow:0 8px 20px rgba(11,37,69,.25);}
-  .junta-nombre-input{width:100%;font-family:var(--font-display);font-size:17px;font-weight:700;color:#fff;border:none;background:transparent;padding:0;margin:0 0 9px;}
+  .junta-nombre-input{width:100%;font-family:var(--font-display);font-size:clamp(1rem, 4.5vw, 1.15rem);font-weight:700;color:#fff;border:none;background:transparent;padding:0;margin:0 0 9px;}
   .junta-cuota-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--oro-light);}
   .junta-cuota-row input{width:90px;padding:7px 9px;margin:0;font-size:13px;border-radius:10px;}
 
   .ronda-tabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:6px;padding-bottom:4px;}
-  .ronda-tab{white-space:nowrap;padding:9px 15px;border-radius:20px;background:var(--gris-claro);color:var(--gris-medio);font-size:12px;font-weight:700;cursor:pointer;}
+  .ronda-tab{white-space:nowrap;min-height:var(--touch-min);display:inline-flex;align-items:center;padding:0 16px;border-radius:20px;background:var(--gris-claro);color:var(--gris-medio);font-size:12px;font-weight:700;cursor:pointer;}
   .ronda-tab.active{background:var(--oro);color:var(--azul-900);}
   .ronda-add{white-space:nowrap;padding:9px 15px;border-radius:20px;background:transparent;border:2px dashed var(--gris-medio);color:var(--azul-900);font-size:12px;font-weight:700;cursor:pointer;}
   .ronda-fecha-row{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--gris-medio);margin:7px 0 15px;}
@@ -365,32 +401,12 @@
   .participante-card{background:var(--blanco);border:1px solid var(--borde);box-shadow:var(--shadow-card);border-radius:14px;padding:13px 15px;margin-bottom:11px;}
   .participante-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:9px;}
   .participante-nombre{flex:1;border:none;background:transparent;font-size:13.5px;font-weight:700;color:var(--azul-900);padding:0;margin:0;}
-  .estado-btn{padding:7px 14px;border-radius:18px;border:2px solid var(--gris-claro);background:var(--gris-claro);color:var(--gris-medio);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;}
+  .estado-btn{min-height:var(--touch-min);display:inline-flex;align-items:center;padding:0 16px;border-radius:18px;border:2px solid var(--gris-claro);background:var(--gris-claro);color:var(--gris-medio);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;}
   .estado-btn.pagado{border-color:var(--verde);color:var(--verde);background:var(--verde-bg);}
   .estado-btn.pendiente{border-color:var(--rojo);color:var(--rojo);background:var(--rojo-bg);}
   .participante-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
   .participante-grid input, .participante-grid select{margin:0;padding:10px 11px;font-size:12px;}
   .participante-grid label{font-size:10px;color:var(--gris-medio);display:block;margin-bottom:3px;font-weight:600;}
-
-  /* Toast */
-  .toast{
-    position:absolute;
-    left:18px;right:18px;top:54px;
-    background:var(--azul-900);
-    color:#fff;
-    padding:14px 18px;
-    border-radius:14px;
-    font-size:13px;
-    font-weight:700;
-    text-align:center;
-    box-shadow:0 10px 24px rgba(11,37,69,.35);
-    border:1.5px solid var(--azul);
-    transform:translateY(-160%);
-    transition:transform .25s ease;
-    z-index:40;
-    pointer-events:none;
-  }
-  .toast.show{transform:translateY(0);}
 
   /* Modal */
   .modal-overlay{
@@ -412,8 +428,7 @@
 </head>
 <body>
 
-<div class="phone">
-  <div class="statusbar">MONEYMAS — PROTOTIPO</div>
+<div class="app-container">
 
   <!-- PANTALLA 1: INICIO -->
   <div class="screen active" id="screen-inicio">
@@ -584,10 +599,6 @@
     </div>
   </div>
 
-  <div class="toast" id="toast">
-    <span id="toast-msg"></span>
-  </div>
-
   <!-- Modal: nueva cuenta -->
   <div class="modal-overlay" id="modal-cuenta">
     <div class="modal">
@@ -602,7 +613,7 @@
       <select id="nc-banco" style="display:none;">
         <option>BCP</option><option>BBVA</option><option>Interbank</option><option>Scotiabank</option>
       </select>
-      <input type="number" id="nc-saldo" placeholder="Saldo inicial">
+      <input type="number" inputmode="decimal" id="nc-saldo" placeholder="Saldo inicial">
       <button class="btn-primary" onclick="guardarCuenta()">Guardar cuenta</button>
     </div>
   </div>
@@ -621,7 +632,7 @@
       <select id="ec-banco" style="display:none;">
         <option>BCP</option><option>BBVA</option><option>Interbank</option><option>Scotiabank</option>
       </select>
-      <input type="number" id="ec-saldo" placeholder="Saldo actual">
+      <input type="number" inputmode="decimal" id="ec-saldo" placeholder="Saldo actual">
       <button class="btn-primary" onclick="guardarEdicionCuenta()">Guardar cambios</button>
       <input type="hidden" id="ec-id">
     </div>
@@ -647,8 +658,8 @@
       <button class="modal-close" onclick="cerrarModal('modal-recurrente')">Cerrar</button>
       <h3>Añadir pago recurrente</h3>
       <input type="text" id="nr-nombre" placeholder="Nombre del pago (ej. Alquiler)">
-      <input type="number" id="nr-monto" placeholder="Monto">
-      <input type="number" id="nr-dia" placeholder="Día de cobro (1-31)" min="1" max="31">
+      <input type="number" inputmode="decimal" id="nr-monto" placeholder="Monto">
+      <input type="number" inputmode="numeric" id="nr-dia" placeholder="Día de cobro (1-31)" min="1" max="31">
       <select id="nr-cuenta"></select>
       <select id="nr-frecuencia" onchange="toggleMesCobro('nr')">
         <option value="Mensual">Mensual</option>
@@ -670,8 +681,8 @@
       <button class="modal-close" onclick="cerrarModal('modal-editar-recurrente')">Cerrar</button>
       <h3>Editar pago recurrente</h3>
       <input type="text" id="er-nombre" placeholder="Nombre del pago">
-      <input type="number" id="er-monto" placeholder="Monto">
-      <input type="number" id="er-dia" placeholder="Día de cobro (1-31)" min="1" max="31">
+      <input type="number" inputmode="decimal" id="er-monto" placeholder="Monto">
+      <input type="number" inputmode="numeric" id="er-dia" placeholder="Día de cobro (1-31)" min="1" max="31">
       <select id="er-cuenta"></select>
       <select id="er-frecuencia" onchange="toggleMesCobro('er')">
         <option value="Mensual">Mensual</option>
@@ -705,7 +716,7 @@
       <div class="junta-header-card">
         <input type="text" class="junta-nombre-input" id="jd-nombre" onchange="actualizarNombreJunta()">
         <div class="junta-cuota-row">
-          Cuota esperada por persona: S/. <input type="number" id="jd-cuota" onchange="actualizarCuotaJunta()">
+          Cuota esperada por persona: S/. <input type="number" inputmode="decimal" id="jd-cuota" onchange="actualizarCuotaJunta()">
         </div>
       </div>
 
@@ -730,8 +741,8 @@
       <button class="modal-close" onclick="cerrarModal('modal-nueva-junta')">Cerrar</button>
       <h3>Nueva junta</h3>
       <input type="text" id="nj-nombre" placeholder="Nombre (ej. Junta Quincenal 2da parte 2026)">
-      <input type="number" id="nj-cuota" placeholder="Cuota esperada por persona (S/.)">
-      <input type="number" id="nj-participantes" placeholder="N° de participantes" value="12" min="2" max="30">
+      <input type="number" inputmode="decimal" id="nj-cuota" placeholder="Cuota esperada por persona (S/.)">
+      <input type="number" inputmode="numeric" id="nj-participantes" placeholder="N° de participantes" value="12" min="2" max="30">
       <button class="btn-primary" onclick="guardarNuevaJunta()">Crear junta</button>
     </div>
   </div>
@@ -746,7 +757,7 @@
         <button class="tipo-btn gasto" id="et-btn-gasto" onclick="etSeleccionarTipo('gasto')">💸 Gasto</button>
         <button class="tipo-btn ingreso" id="et-btn-ingreso" onclick="etSeleccionarTipo('ingreso')">💰 Ingreso</button>
       </div>
-      <input type="number" id="et-monto" placeholder="Monto" style="margin-top:14px;">
+      <input type="number" inputmode="decimal" id="et-monto" placeholder="Monto" style="margin-top:14px;">
       <select id="et-cuenta"></select>
       <select id="et-categoria"></select>
       <button class="btn-primary" onclick="guardarEdicionTx()">Guardar cambios</button>
@@ -898,16 +909,7 @@ function registrarMovimiento(){
 
   document.getElementById("monto-input").value = "";
   renderInicio();
-  mostrarToast("Movimiento registrado: " + (tipoSeleccionado==="gasto" ? "-" : "+") + " S/. " + monto.toFixed(2));
 }
-function mostrarToast(msg){
-  document.getElementById("toast-msg").textContent = msg;
-  const t = document.getElementById("toast");
-  t.classList.add("show");
-  clearTimeout(window._toastTimer);
-  window._toastTimer = setTimeout(ocultarToast, 2500);
-}
-function ocultarToast(){ document.getElementById("toast").classList.remove("show"); }
 
 /* ---------- FILTRO POR PERIODO (compartido) ---------- */
 function inicioSemana(d){
@@ -1111,7 +1113,6 @@ function guardarEdicionTx(){
   renderInformes();
   renderMovimientos();
   renderPresupuesto();
-  mostrarToast("Movimiento actualizado");
 }
 function eliminarTransaccion(id, refrescarMov){
   const t = transacciones.find(x=>x.id===id);
@@ -1632,7 +1633,7 @@ function renderDetalleJunta(){
         <button class="estado-btn ${pago.estado}" onclick="toggleEstadoPago(${idx})">${pago.estado==="pagado" ? "✓ Pagó" : "Falta"}</button>
       </div>
       <div class="participante-grid">
-        <div><label>Monto pagado</label><input type="number" value="${pago.monto}" onchange="actualizarPago(${idx},'monto',this.value)"></div>
+        <div><label>Monto pagado</label><input type="number" inputmode="decimal" value="${pago.monto}" onchange="actualizarPago(${idx},'monto',this.value)"></div>
         <div><label>Fecha de pago</label><input type="date" value="${fechaVal}" onchange="actualizarPago(${idx},'fecha',this.value)"></div>
         <div><label>Medio usado</label><select onchange="actualizarPago(${idx},'medio',this.value)">${mediosOpts}</select></div>
         <div><label>Cuenta destino</label><select onchange="actualizarPago(${idx},'cuentaId',this.value)">${cuentasOpts}</select></div>
