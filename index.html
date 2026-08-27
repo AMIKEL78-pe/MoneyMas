@@ -881,6 +881,7 @@ function renderInicio(){
     pillWrap.appendChild(p);
   });
   renderSelectCategoria();
+  guardarEnLocalStorage(); // Persistencia inmediata en localStorage
 }
 function renderSelectCategoria(){
   const sel = document.getElementById("select-categoria");
@@ -970,6 +971,7 @@ function renderMovimientos(){
     `;
     wrap.appendChild(row);
   });
+  guardarEnLocalStorage(); // Persistencia inmediata en localStorage
 }
 function formatFechaHora(d){
   return d.toLocaleDateString("es-PE",{day:"2-digit",month:"short"}) + " · " + d.toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"});
@@ -1046,6 +1048,7 @@ function renderInformes(){
     `;
     lista.appendChild(row);
   });
+  guardarEnLocalStorage(); // Persistencia inmediata en localStorage
 }
 let etTipoActual = "gasto";
 function etSeleccionarTipo(tipo){
@@ -1279,6 +1282,7 @@ function renderPresupuesto(){
     `;
     segWrap.appendChild(item);
   });
+  guardarEnLocalStorage(); // Persistencia inmediata en localStorage
 }
 function abrirEditarRecurrente(id){
   const r = recurrentes.find(x=>x.id===id);
@@ -1379,6 +1383,7 @@ function renderCuentas(){
       selRec.appendChild(o);
     });
   }
+  guardarEnLocalStorage(); // Persistencia inmediata en localStorage
 }
 function cambiarTabCategoria(tipo){
   tabCategoriaActiva = tipo;
@@ -1394,6 +1399,7 @@ function renderCategorias(){
     chip.textContent = `${emojiCategoria(cat, tabCategoriaActiva)} ${cat}`;
     wrap.appendChild(chip);
   });
+  guardarEnLocalStorage(); // Persistencia inmediata en localStorage
 }
 function toggleCampoBanco(){
   document.getElementById("nc-banco").style.display = document.getElementById("nc-tipo").value==="Banco" ? "block" : "none";
@@ -1544,6 +1550,7 @@ function renderListaJuntas(){
     `;
     wrap.appendChild(card);
   });
+  guardarEnLocalStorage(); // Persistencia inmediata en localStorage
 }
 function abrirJunta(id){
   juntaActivaId = id;
@@ -1641,6 +1648,7 @@ function renderDetalleJunta(){
     `;
     wrap.appendChild(card);
   });
+  guardarEnLocalStorage(); // Persistencia inmediata en localStorage
 }
 function actualizarNombreParticipante(idx, valor){
   const j = juntas.find(x=>x.id===juntaActivaId);
@@ -1687,9 +1695,93 @@ function guardarNuevaJunta(){
   abrirJunta(nueva.id);
 }
 
+/* ============================================================
+   PERSISTENCIA — localStorage
+   Cada colección se guarda bajo su propia clave "moneymas_...".
+   1) guardarEnLocalStorage() se llama al final de cada función
+      render* (que a su vez se llama después de cada acción del
+      usuario: registrar, editar, eliminar, etc.), así que el
+      arreglo actualizado queda guardado de inmediato.
+   2) cargarDeLocalStorage() se ejecuta en DOMContentLoaded y
+      reconstruye el estado — incluyendo los campos de fecha, que
+      JSON no soporta de forma nativa y hay que reconvertir a Date.
+   ============================================================ */
+const CLAVES_STORAGE = {
+  cuentas: "moneymas_cuentas",
+  categorias: "moneymas_categorias",
+  transacciones: "moneymas_transacciones",
+  recurrentes: "moneymas_recurrentes",
+  juntas: "moneymas_juntas",
+  presupuesto: "moneymas_presupuesto"
+};
+
+function guardarEnLocalStorage(){
+  try{
+    localStorage.setItem(CLAVES_STORAGE.cuentas, JSON.stringify(cuentas));
+    localStorage.setItem(CLAVES_STORAGE.categorias, JSON.stringify(categorias));
+    localStorage.setItem(CLAVES_STORAGE.transacciones, JSON.stringify(transacciones));
+    localStorage.setItem(CLAVES_STORAGE.recurrentes, JSON.stringify(recurrentes));
+    localStorage.setItem(CLAVES_STORAGE.juntas, JSON.stringify(juntas));
+    localStorage.setItem(CLAVES_STORAGE.presupuesto, JSON.stringify({
+      metaMensual, nextId, nextRecId, nextJuntaId, nextRondaId, cuentaSeleccionada
+    }));
+  }catch(e){
+    console.error("No se pudo guardar en localStorage:", e);
+  }
+}
+
+function cargarDeLocalStorage(){
+  try{
+    const rawCuentas = localStorage.getItem(CLAVES_STORAGE.cuentas);
+    if(rawCuentas) cuentas = JSON.parse(rawCuentas);
+
+    const rawCategorias = localStorage.getItem(CLAVES_STORAGE.categorias);
+    if(rawCategorias) categorias = JSON.parse(rawCategorias);
+
+    const rawTx = localStorage.getItem(CLAVES_STORAGE.transacciones);
+    if(rawTx){
+      transacciones = JSON.parse(rawTx).map(t => ({...t, fecha: new Date(t.fecha)}));
+    }
+
+    const rawRec = localStorage.getItem(CLAVES_STORAGE.recurrentes);
+    if(rawRec) recurrentes = JSON.parse(rawRec);
+
+    const rawJuntas = localStorage.getItem(CLAVES_STORAGE.juntas);
+    if(rawJuntas){
+      juntas = JSON.parse(rawJuntas).map(j => ({
+        ...j,
+        fecha_pago: j.fecha_pago ? new Date(j.fecha_pago) : null,
+        rondas: j.rondas.map(r => ({
+          ...r,
+          fecha: new Date(r.fecha),
+          pagos: Object.fromEntries(
+            Object.entries(r.pagos).map(([idx, p]) => [idx, {...p, fecha: new Date(p.fecha)}])
+          )
+        }))
+      }));
+    }
+
+    const rawPresupuesto = localStorage.getItem(CLAVES_STORAGE.presupuesto);
+    if(rawPresupuesto){
+      const p = JSON.parse(rawPresupuesto);
+      if(typeof p.metaMensual === "number") metaMensual = p.metaMensual;
+      if(typeof p.nextId === "number") nextId = p.nextId;
+      if(typeof p.nextRecId === "number") nextRecId = p.nextRecId;
+      if(typeof p.nextJuntaId === "number") nextJuntaId = p.nextJuntaId;
+      if(typeof p.nextRondaId === "number") nextRondaId = p.nextRondaId;
+      if(typeof p.cuentaSeleccionada === "number") cuentaSeleccionada = p.cuentaSeleccionada;
+    }
+  }catch(e){
+    console.error("Datos corruptos en localStorage, se ignoran y se usan los de ejemplo:", e);
+  }
+}
+
 /* ---------- INIT ---------- */
-seleccionarTipo("gasto");
-renderInicio();
+document.addEventListener("DOMContentLoaded", function(){
+  cargarDeLocalStorage(); // si ya hay datos guardados, reemplazan a los de ejemplo
+  seleccionarTipo("gasto");
+  renderInicio();
+});
 </script>
 </body>
 </html>
