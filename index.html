@@ -591,6 +591,36 @@
     <div class="tool-card">
       <div class="tool-head">
         <div>
+          <div class="tool-title">📧 Sincronizar correos BCP / Yape</div>
+          <div class="tool-sub">Lee notificaciones de transferencias y Yapes recibidos en tu correo para registrarlos como gastos o ingresos.</div>
+        </div>
+      </div>
+
+      <div id="gmail-desconectado">
+        <button class="btn-secondary" style="margin-top:12px;display:flex;align-items:center;justify-content:center;gap:8px;" onclick="conectarGmail()" id="btn-conectar-gmail">
+          <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true">
+            <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.5 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/>
+            <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.6 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.5 29.6 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
+            <path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.5-5.2l-6.2-5.3C29.4 35.1 26.8 36 24 36c-5.2 0-9.6-3.1-11.3-7.6l-6.5 5C9.6 39.6 16.3 44 24 44z"/>
+            <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.2-4.2 5.6l6.2 5.3C40.9 36 44 30.7 44 24c0-1.3-.1-2.7-.4-3.5z"/>
+          </svg>
+          Conectar con Gmail
+        </button>
+      </div>
+
+      <div id="gmail-conectado" style="display:none;margin-top:12px;">
+        <div style="display:flex;align-items:center;gap:8px;background:var(--verde-bg);border-radius:12px;padding:10px 14px;">
+          <span style="color:var(--verde);font-weight:700;font-size:12.5px;">🟢 Conectado</span>
+          <span style="color:var(--gris-medio);font-size:11.5px;" id="gmail-ultima-sync">Aún no sincronizado</span>
+        </div>
+        <button class="btn-secondary" style="margin-top:10px;" onclick="sincronizarGmailAhora()" id="btn-sincronizar-gmail">🔄 Sincronizar ahora</button>
+      </div>
+      <div class="hint" id="gmail-estado-detalle" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="tool-card">
+      <div class="tool-head">
+        <div>
           <div class="tool-title">Exportar datos</div>
           <div class="tool-sub">Descarga todo el historial en CSV</div>
         </div>
@@ -1776,11 +1806,307 @@ function cargarDeLocalStorage(){
   }
 }
 
+/* ============================================================
+   SINCRONIZACIÓN CON GMAIL (BCP / Yape) — 100% client-side
+   ============================================================
+   Requiere:
+   1. Un proyecto en https://console.cloud.google.com con la
+      Gmail API habilitada.
+   2. Una credencial OAuth 2.0 tipo "Web application", con tu
+      dominio de GitHub Pages (https://tu-usuario.github.io)
+      agregado en "Authorized JavaScript origins".
+   3. Pegar ese Client ID abajo, reemplazando el placeholder.
+
+   Usa Google Identity Services en modo "token client" (NO el
+   flujo con client_secret): el navegador pide un access_token
+   directamente, sin backend. Por eso el token dura ~1 hora y no
+   hay refresh_token — al expirar, hay que reconectar.
+   ============================================================ */
+
+// 👉 PEGA AQUÍ TU CLIENT ID REAL (termina en .apps.googleusercontent.com)
+const GOOGLE_CLIENT_ID = "168033373845-6c8v0mtl3rkjcu4or81p9ruitlus5ku1.apps.googleusercontent.com";
+
+const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+const CLAVE_GMAIL_TOKEN = "moneymas_gmail_token";       // sessionStorage: token de acceso (vive solo esta pestaña)
+const CLAVE_GMAIL_ULTIMA_SYNC = "moneymas_gmail_ultima_sync"; // localStorage: fecha de la última sincronización
+const CLAVE_GMAIL_PROCESADOS = "moneymas_email_ids_procesados"; // localStorage: IDs de correos ya importados (evita duplicados)
+
+let tokenClientGmail = null;
+let gsiScriptCargado = false;
+
+// Carga el SDK de Google (https://accounts.google.com/gsi/client) solo la
+// primera vez que el usuario realmente usa esta herramienta — así el resto
+// de la app sigue siendo 100% offline si nunca se toca "Conectar con Gmail".
+function cargarGoogleIdentityServices(){
+  return new Promise((resolve, reject)=>{
+    if(gsiScriptCargado && window.google && window.google.accounts){
+      resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.onload = ()=>{ gsiScriptCargado = true; resolve(); };
+    script.onerror = ()=> reject(new Error("No se pudo cargar Google Identity Services (¿sin conexión a internet?)"));
+    document.head.appendChild(script);
+  });
+}
+
+// Lee el token de acceso guardado en sessionStorage, si sigue vigente.
+function obtenerTokenGmailVigente(){
+  try{
+    const raw = sessionStorage.getItem(CLAVE_GMAIL_TOKEN);
+    if(!raw) return null;
+    const datos = JSON.parse(raw);
+    if(Date.now() >= datos.expira) return null; // token vencido (~1h)
+    return datos.access_token;
+  }catch(e){
+    return null;
+  }
+}
+
+function guardarTokenGmail(access_token, expires_in){
+  sessionStorage.setItem(CLAVE_GMAIL_TOKEN, JSON.stringify({
+    access_token,
+    expira: Date.now() + (expires_in*1000)
+  }));
+}
+
+// Botón "Conectar con Gmail": carga el SDK, crea el cliente de token
+// (si no existe) y abre el popup de consentimiento de Google.
+function conectarGmail(){
+  if(GOOGLE_CLIENT_ID.startsWith("TU_GOOGLE_CLIENT_ID")){
+    alert("Falta configurar GOOGLE_CLIENT_ID en el código (busca esa constante cerca del final del script) con tu Client ID real de Google Cloud Console.");
+    return;
+  }
+  const boton = document.getElementById("btn-conectar-gmail");
+  if(boton){ boton.disabled = true; boton.textContent = "Conectando…"; }
+
+  cargarGoogleIdentityServices()
+    .then(()=>{
+      if(!tokenClientGmail){
+        tokenClientGmail = google.accounts.oauth2.initTokenClient({
+          client_id: GOOGLE_CLIENT_ID,
+          scope: GMAIL_SCOPE,
+          callback: (respuesta)=>{
+            if(respuesta.error){
+              alert("No se pudo conectar con Gmail: " + respuesta.error);
+              renderGmailUI();
+              return;
+            }
+            guardarTokenGmail(respuesta.access_token, respuesta.expires_in);
+            renderGmailUI();
+            sincronizarGmailAhora(); // primera sincronización automática al conectar
+          }
+        });
+      }
+      tokenClientGmail.requestAccessToken({prompt: "consent"});
+    })
+    .catch((err)=>{
+      alert(err.message);
+      renderGmailUI();
+    });
+}
+
+// Refleja en la tarjeta si hay un token vigente y cuándo fue la última sync.
+function renderGmailUI(){
+  const token = obtenerTokenGmailVigente();
+  const bloqueDesconectado = document.getElementById("gmail-desconectado");
+  const bloqueConectado = document.getElementById("gmail-conectado");
+  const boton = document.getElementById("btn-conectar-gmail");
+  if(!bloqueDesconectado || !bloqueConectado) return; // la tarjeta aún no está en el DOM
+
+  if(boton){ boton.disabled = false; boton.textContent = "Conectar con Gmail"; }
+
+  if(token){
+    bloqueDesconectado.style.display = "none";
+    bloqueConectado.style.display = "block";
+    const ultimaSync = localStorage.getItem(CLAVE_GMAIL_ULTIMA_SYNC);
+    document.getElementById("gmail-ultima-sync").textContent = ultimaSync
+      ? "Última sync: " + new Date(ultimaSync).toLocaleString("es-PE")
+      : "Aún no sincronizado";
+  } else {
+    bloqueDesconectado.style.display = "block";
+    bloqueConectado.style.display = "none";
+  }
+}
+
+function sincronizarGmailAhora(){
+  const token = obtenerTokenGmailVigente();
+  if(!token){
+    alert("Tu conexión con Gmail expiró (dura ~1 hora por seguridad). Vuelve a tocar 'Conectar con Gmail'.");
+    renderGmailUI();
+    return;
+  }
+  const boton = document.getElementById("btn-sincronizar-gmail");
+  const detalle = document.getElementById("gmail-estado-detalle");
+  if(boton){ boton.disabled = true; boton.textContent = "Sincronizando…"; }
+  if(detalle) detalle.textContent = "";
+
+  buscarYProcesarCorreos(token)
+    .then((resumen)=>{
+      localStorage.setItem(CLAVE_GMAIL_ULTIMA_SYNC, new Date().toISOString());
+      renderGmailUI();
+      // Refresca las pantallas que muestran movimientos.
+      renderInicio(); renderInformes(); renderMovimientos(); renderPresupuesto();
+      if(detalle){
+        detalle.textContent = resumen.importados > 0
+          ? `✅ ${resumen.importados} movimiento(s) importado(s).` + (resumen.omitidos>0 ? ` ${resumen.omitidos} correo(s) omitido(s) por revisar manualmente.` : "")
+          : "No se encontraron correos nuevos para importar.";
+      }
+    })
+    .catch((err)=>{
+      console.error("Error sincronizando Gmail:", err);
+      if(detalle) detalle.textContent = "⚠️ Ocurrió un error al sincronizar: " + err.message;
+    })
+    .finally(()=>{
+      if(boton){ boton.disabled = false; boton.textContent = "🔄 Sincronizar ahora"; }
+    });
+}
+
+// Llama a la Gmail API: busca correos de BCP/Yape, descarta los ya
+// procesados, descarga cada uno completo y lo pasa por el parser.
+async function buscarYProcesarCorreos(token){
+  const q = 'from:bcp.com.pe OR from:yape.com.pe OR subject:Yapeaste OR subject:Transferencia';
+  const listaResp = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=25`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if(!listaResp.ok) throw new Error("Gmail API respondió " + listaResp.status + " (¿token sin permisos o expirado?)");
+  const listaJson = await listaResp.json();
+  const mensajes = listaJson.messages || [];
+
+  const procesados = new Set(JSON.parse(localStorage.getItem(CLAVE_GMAIL_PROCESADOS) || "[]"));
+  let importados = 0, omitidos = 0;
+
+  for(const m of mensajes){
+    if(procesados.has(m.id)) continue; // ya se importó antes, evita duplicar
+
+    const msgResp = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if(!msgResp.ok) { omitidos++; continue; }
+    const msg = await msgResp.json();
+
+    const resultado = parsearCorreoTransaccion(msg);
+    procesados.add(m.id); // se marca como procesado aunque no se haya podido importar, para no reintentarlo cada vez
+
+    if(!resultado){ omitidos++; continue; }
+
+    const cuenta = buscarCuentaPorNombre(resultado.cuentaNombre);
+    if(!cuenta){ omitidos++; continue; } // la cuenta "Yape"/"BCP Ahorros" no existe (el usuario la renombró o eliminó)
+
+    // Asegura que exista una categoría genérica para lo importado por correo,
+    // sin inventar una categoría específica (Comida, Transporte, etc.) que el
+    // correo no puede saber con certeza. El usuario puede reclasificarla luego
+    // usando el mismo botón ✏️ de editar que ya existe en Movimientos.
+    const listaCategorias = categorias[resultado.tipo];
+    if(!listaCategorias.includes("Sincronizado (correo)")) listaCategorias.push("Sincronizado (correo)");
+
+    transacciones.unshift({
+      id: nextId++,
+      tipo: resultado.tipo,
+      monto: resultado.monto,
+      categoria: "Sincronizado (correo)",
+      cuentaId: cuenta.id,
+      fecha: resultado.fecha,
+      nota: resultado.nota
+    });
+    cuenta.saldo += resultado.tipo === "ingreso" ? resultado.monto : -resultado.monto;
+    importados++;
+  }
+
+  localStorage.setItem(CLAVE_GMAIL_PROCESADOS, JSON.stringify([...procesados]));
+  if(importados > 0) guardarEnLocalStorage();
+  return { importados, omitidos };
+}
+
+// Decodifica el cuerpo del correo (Gmail lo entrega en base64url) y
+// devuelve texto plano, prefiriendo la parte text/plain si existe.
+function extraerTextoDelMensaje(payload){
+  function decodificar(data){
+    if(!data) return "";
+    const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
+    try{
+      return decodeURIComponent(escape(atob(base64)));
+    }catch(e){
+      return atob(base64);
+    }
+  }
+  if(payload.parts && payload.parts.length){
+    const textoPlano = payload.parts.find(p => p.mimeType === "text/plain");
+    if(textoPlano && textoPlano.body && textoPlano.body.data) return decodificar(textoPlano.body.data);
+    const html = payload.parts.find(p => p.mimeType === "text/html");
+    if(html && html.body && html.body.data) return decodificar(html.body.data).replace(/<[^>]+>/g, " ");
+    // Multipart anidado (ej. multipart/mixed conteniendo multipart/alternative)
+    for(const p of payload.parts){
+      if(p.parts) { const t = extraerTextoDelMensaje(p); if(t) return t; }
+    }
+  }
+  if(payload.body && payload.body.data) return decodificar(payload.body.data);
+  return "";
+}
+
+// ---- PARSER: intenta extraer una transacción a partir de un correo ----
+// ⚠️ Los patrones de abajo son una estimación razonable según los ejemplos
+// descritos, pero las plantillas reales de BCP/Yape pueden variar. Ajusta
+// estos regex una vez que la pruebes contra tus propios correos.
+function parsearCorreoTransaccion(msg){
+  const headers = msg.payload.headers || [];
+  const asunto = (headers.find(h => h.name === "Subject") || {}).value || "";
+  const remitente = (headers.find(h => h.name === "From") || {}).value || "";
+  const cuerpo = extraerTextoDelMensaje(msg.payload);
+  const textoCompleto = `${asunto}\n${cuerpo}`;
+
+  // Moneda + monto. Si detecta USD/$ en vez de soles, se descarta:
+  // la app no maneja multi-moneda y convertir mal el monto sería peor
+  // que no importarlo.
+  const matchSoles = textoCompleto.match(/S\/\.?\s?([\d,]+\.\d{2})/);
+  const matchDolares = textoCompleto.match(/(?:USD|\$)\s?([\d,]+\.\d{2})/i);
+  if(!matchSoles){
+    return null; // sin monto en soles reconocible (incluye el caso "solo hay USD")
+  }
+  const monto = parseFloat(matchSoles[1].replace(/,/g, ""));
+  if(!monto || monto <= 0) return null;
+
+  // Tipo de operación según palabras clave del asunto/cuerpo.
+  const textoMin = textoCompleto.toLowerCase();
+  const esGasto = /yapeaste|transferiste|pagaste|env[ií]o exitoso/.test(textoMin);
+  const esIngreso = /te yapearon|recibiste|transferencia recibida/.test(textoMin);
+  if(!esGasto && !esIngreso) return null; // no se pudo determinar el tipo, se omite
+  const tipo = esGasto ? "gasto" : "ingreso";
+
+  // Cuenta destino según el remitente/asunto.
+  let cuentaNombre = null;
+  if(/yape/i.test(remitente) || /yape/i.test(asunto)) cuentaNombre = "Yape";
+  else if(/bcp/i.test(remitente)) cuentaNombre = "BCP Ahorros";
+  if(!cuentaNombre) return null;
+
+  // Fecha real del correo (no la fecha de sincronización).
+  const fecha = msg.internalDate ? new Date(parseInt(msg.internalDate, 10)) : new Date();
+
+  // Concepto: intenta capturar un nombre tras "a "/"de " (ej. "Yapeaste a Juan Pérez").
+  const matchNombre = cuerpo.match(/\b(?:a|de)\b\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){0,2})/);
+  const nota = matchNombre ? matchNombre[1].trim() : asunto.slice(0, 60);
+
+  return { tipo, monto, cuentaNombre, fecha, nota };
+}
+
+// Busca una cuenta por nombre exacto (case-insensitive). Si el usuario
+// renombró o eliminó "Yape"/"BCP Ahorros", devuelve null en vez de
+// asignar la transacción a una cuenta equivocada.
+function buscarCuentaPorNombre(nombre){
+  if(!nombre) return null;
+  return cuentas.find(c => c.nombre.toLowerCase() === nombre.toLowerCase()) || null;
+}
+
 /* ---------- INIT ---------- */
 document.addEventListener("DOMContentLoaded", function(){
   cargarDeLocalStorage(); // si ya hay datos guardados, reemplazan a los de ejemplo
   seleccionarTipo("gasto");
   renderInicio();
+  renderGmailUI();
 });
 </script>
 </body>
