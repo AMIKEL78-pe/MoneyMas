@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="google-site-verification" content="sphep6yuZ1zjphTCqM4wxlCkLShlHVCJdGhEYgB1deo" />
 <title>MoneyMas — Prototipo</title>
 <style>
   :root{
@@ -159,6 +158,9 @@
     cursor:pointer;
   }
   .pill.selected{border-color:var(--azul);color:var(--azul);font-weight:700;background:var(--azul-light);}
+
+  .fecha-toggle-row{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;}
+  #pill-fecha-hoy.activa{border-color:var(--azul);color:var(--azul);font-weight:700;background:var(--azul-light);}
 
   select, input[type=text], input[type=number], input[type=time], input[type=date]{
     width:100%;
@@ -321,6 +323,42 @@
   .tx-action-btn.del:hover{background:var(--rojo-bg);}
   .tx-hint{font-size:10.5px;color:var(--gris-medio);text-align:center;margin-top:8px;}
   .tx-empty{text-align:center;color:var(--gris-medio);font-size:13px;padding:30px 0;}
+
+  /* ============================================================
+     Tarjeta del gráfico de Saldo (Informes) — inspirada en apps
+     de banca/finanzas: card blanca, línea de tendencia, cuadrícula
+     punteada sutil y píldoras de rango debajo.
+     ============================================================ */
+  .chart-card{
+    background:var(--blanco);
+    border:1px solid var(--borde);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow-card);
+    padding:16px 16px 6px;
+    margin-bottom:20px;
+  }
+  .chart-card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;}
+  .chart-card-title{font-size:14px;font-weight:700;color:var(--azul-900);}
+  .chart-card-sub{font-size:11px;color:var(--gris-medio);margin-top:1px;}
+  .chart-card-valor{font-family:var(--font-display);font-size:17px;font-weight:700;color:var(--azul-900);}
+  .chart-card-delta{font-size:11px;font-weight:700;margin-top:1px;}
+  .chart-card-delta.pos{color:var(--verde);}
+  .chart-card-delta.neg{color:var(--rojo);}
+  #grafico-saldo{width:100%;overflow:hidden;}
+  #grafico-saldo svg{display:block;width:100%;height:auto;}
+  .chart-rango-tabs{display:flex;gap:6px;padding:10px 0 12px;border-top:1px solid var(--borde);margin-top:8px;}
+  .chart-rango-tab{
+    flex:1;
+    min-height:var(--touch-min);
+    display:flex;align-items:center;justify-content:center;
+    border-radius:18px;
+    border:1.5px solid var(--borde);
+    color:var(--gris-medio);
+    font-size:11px;
+    font-weight:700;
+    cursor:pointer;
+  }
+  .chart-rango-tab.active{background:var(--azul);border-color:var(--azul);color:#fff;}
 
   /* Screen: config */
   .acc-row{display:flex;justify-content:space-between;align-items:center;padding:13px 6px;border-bottom:1px solid var(--borde);gap:10px;}
@@ -530,6 +568,12 @@
     <div class="pill-row" id="pill-cuentas"></div>
     <select id="select-categoria"></select>
 
+    <div class="fecha-toggle-row">
+      <button type="button" class="pill" id="pill-fecha-hoy" onclick="toggleFechaManual()">📅 Hoy</button>
+      <span class="hint" style="margin:0;" id="fecha-hoy-hint"></span>
+    </div>
+    <input type="datetime-local" id="fecha-manual-input" style="display:none;" onchange="actualizarFechaHintInicio()">
+
     <button class="btn-primary" onclick="registrarMovimiento()">Registrar movimiento</button>
     <div class="hint">La moneda se toma de la cuenta seleccionada</div>
   </div>
@@ -548,6 +592,28 @@
   <!-- PANTALLA 3: INFORMES -->
   <div class="screen" id="screen-informes">
     <h1 class="app-title" style="margin-bottom:16px;">Informes</h1>
+
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <div>
+          <div class="chart-card-title">Evolución de saldo</div>
+          <div class="chart-card-sub" id="saldo-chart-rango">Últimos 30 días</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="chart-card-valor" id="saldo-chart-valor">S/. 0.00</div>
+          <div class="chart-card-delta" id="saldo-chart-delta"></div>
+        </div>
+      </div>
+      <div id="grafico-saldo"></div>
+      <div class="chart-rango-tabs">
+        <div class="chart-rango-tab" data-dias="7" onclick="cambiarRangoSaldo(7)">7D</div>
+        <div class="chart-rango-tab active" data-dias="30" onclick="cambiarRangoSaldo(30)">30D</div>
+        <div class="chart-rango-tab" data-dias="90" onclick="cambiarRangoSaldo(90)">90D</div>
+        <div class="chart-rango-tab" data-dias="180" onclick="cambiarRangoSaldo(180)">6M</div>
+        <div class="chart-rango-tab" data-dias="365" onclick="cambiarRangoSaldo(365)">1A</div>
+      </div>
+    </div>
+
     <div class="tabs">
       <div class="tab" data-periodo="dia" onclick="cambiarPeriodo('dia')">Día</div>
       <div class="tab" data-periodo="semana" onclick="cambiarPeriodo('semana')">Semana</div>
@@ -902,6 +968,8 @@
       <input type="number" inputmode="decimal" id="et-monto" placeholder="Monto" style="margin-top:14px;">
       <select id="et-cuenta"></select>
       <select id="et-categoria"></select>
+      <label style="font-size:10px;color:var(--gris-medio);display:block;margin:10px 0 3px;font-weight:600;">Fecha y hora</label>
+      <input type="datetime-local" id="et-fecha">
       <button class="btn-primary" onclick="guardarEdicionTx()">Guardar cambios</button>
       <input type="hidden" id="et-id">
     </div>
@@ -1002,6 +1070,7 @@ function irA(pantalla){
 
 /* ---------- PANTALLA: INICIO ---------- */
 function renderInicio(){
+  actualizarFechaHintInicio();
   const total = cuentas.reduce((a,c)=>a+c.saldo,0);
   document.getElementById("saldo-total").textContent = "S/. " + total.toFixed(2);
   const detalle = document.getElementById("saldo-detalle");
@@ -1040,17 +1109,56 @@ function seleccionarTipo(tipo){
   document.getElementById("btn-ingreso").classList.toggle("selected", tipo==="ingreso");
   renderSelectCategoria();
 }
+let fechaManualActiva = false;
+
+// Alterna entre "usar la fecha/hora actual" (por defecto, sin fricción)
+// y mostrar un campo para elegir otra fecha — pensado para anotar algo
+// que pasó antes, sin volver más lento el registro normal.
+function toggleFechaManual(){
+  fechaManualActiva = !fechaManualActiva;
+  const pill = document.getElementById("pill-fecha-hoy");
+  const input = document.getElementById("fecha-manual-input");
+  pill.classList.toggle("activa", fechaManualActiva);
+  pill.textContent = fechaManualActiva ? "📅 Otra fecha" : "📅 Hoy";
+  input.style.display = fechaManualActiva ? "block" : "none";
+  if(fechaManualActiva && !input.value){
+    input.value = formatearParaDatetimeLocal(new Date());
+  }
+  actualizarFechaHintInicio();
+}
+function actualizarFechaHintInicio(){
+  const hint = document.getElementById("fecha-hoy-hint");
+  if(!hint) return;
+  hint.textContent = fechaManualActiva ? "" : "Se registrará con la fecha y hora de ahora";
+}
+// input[type=datetime-local] necesita "YYYY-MM-DDTHH:MM" en hora LOCAL
+// (no ISO/UTC), por eso no se usa toISOString() directamente.
+function formatearParaDatetimeLocal(fecha){
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${fecha.getFullYear()}-${pad(fecha.getMonth()+1)}-${pad(fecha.getDate())}T${pad(fecha.getHours())}:${pad(fecha.getMinutes())}`;
+}
+function obtenerFechaSeleccionadaInicio(){
+  if(fechaManualActiva){
+    const v = document.getElementById("fecha-manual-input").value;
+    if(v) return new Date(v);
+  }
+  return new Date();
+}
+
 function registrarMovimiento(){
   const montoRaw = document.getElementById("monto-input").value;
   const monto = parseFloat(montoRaw);
   if(!monto || monto<=0){ document.getElementById("monto-input").focus(); return; }
   const categoria = document.getElementById("select-categoria").value;
-  const tx = {id:nextId++, tipo:tipoSeleccionado, monto:monto, categoria:categoria, cuentaId:cuentaSeleccionada, fecha:new Date()};
+  const tx = {id:nextId++, tipo:tipoSeleccionado, monto:monto, categoria:categoria, cuentaId:cuentaSeleccionada, fecha:obtenerFechaSeleccionadaInicio()};
   transacciones.unshift(tx);
   const cuenta = cuentas.find(c=>c.id===cuentaSeleccionada);
   cuenta.saldo += tipoSeleccionado==="ingreso" ? monto : -monto;
 
   document.getElementById("monto-input").value = "";
+  // Vuelve a "Hoy" por defecto después de registrar, para que el
+  // siguiente movimiento no herede sin querer la fecha anterior.
+  if(fechaManualActiva) toggleFechaManual();
   renderInicio();
 }
 
@@ -1120,12 +1228,107 @@ function formatFechaHora(d){
 }
 
 /* ---------- PANTALLA: INFORMES ---------- */
+/* ============================================================
+   GRÁFICO DE SALDO (Informes)
+   Reconstruye el saldo total al final de cada día restando, desde
+   el saldo actual, el efecto de las transacciones posteriores a
+   ese día. Es independiente de las pestañas Día/Semana/Mes (esas
+   solo controlan el donut y el resumen de abajo).
+   ⚠️ Limitación: si alguna vez editaste el saldo de una cuenta a
+   mano (no vía un movimiento) o le pusiste saldo inicial al
+   crearla, esos cambios no quedan en el historial de transacciones,
+   así que el tramo del gráfico anterior a ese ajuste no será exacto.
+   ============================================================ */
+let rangoDiasSaldo = 30;
+
+function calcularSerieSaldo(dias){
+  const hoy = new Date();
+  const saldoActual = cuentas.reduce((a,c)=>a+c.saldo,0);
+  const puntos = [];
+  for(let i = dias - 1; i >= 0; i--){
+    const finDia = new Date(hoy);
+    finDia.setDate(hoy.getDate() - i);
+    finDia.setHours(23,59,59,999);
+    const efectoPosterior = transacciones
+      .filter(t => t.fecha > finDia)
+      .reduce((a,t) => a + (t.tipo === "ingreso" ? t.monto : -t.monto), 0);
+    puntos.push({ fecha: new Date(finDia), saldo: saldoActual - efectoPosterior });
+  }
+  return puntos;
+}
+
+function cambiarRangoSaldo(dias){
+  rangoDiasSaldo = dias;
+  document.querySelectorAll(".chart-rango-tab").forEach(t => t.classList.toggle("active", parseInt(t.dataset.dias) === dias));
+  const rangoLbl = document.getElementById("saldo-chart-rango");
+  const etiquetas = {7:"Últimos 7 días", 30:"Últimos 30 días", 90:"Últimos 90 días", 180:"Últimos 6 meses", 365:"Último año"};
+  if(rangoLbl) rangoLbl.textContent = etiquetas[dias] || `Últimos ${dias} días`;
+  renderGraficoSaldo();
+}
+
+function renderGraficoSaldo(){
+  const cont = document.getElementById("grafico-saldo");
+  if(!cont) return;
+  const puntos = calcularSerieSaldo(rangoDiasSaldo);
+
+  const saldoFinal = puntos[puntos.length - 1].saldo;
+  const saldoInicial = puntos[0].saldo;
+  const delta = saldoFinal - saldoInicial;
+
+  document.getElementById("saldo-chart-valor").textContent = "S/. " + saldoFinal.toFixed(2);
+  const deltaEl = document.getElementById("saldo-chart-delta");
+  const pctTxt = saldoInicial !== 0 ? ` (${delta >= 0 ? "+" : ""}${((delta/Math.abs(saldoInicial))*100).toFixed(1)}%)` : "";
+  deltaEl.textContent = (delta >= 0 ? "▲ +" : "▼ ") + "S/. " + Math.abs(delta).toFixed(2) + pctTxt;
+  deltaEl.classList.toggle("pos", delta >= 0);
+  deltaEl.classList.toggle("neg", delta < 0);
+
+  // ---- Construcción del SVG (línea + área + cuadrícula punteada) ----
+  const W = 300, H = 130, padL = 4, padR = 4, padT = 8, padB = 4;
+  const valores = puntos.map(p => p.saldo);
+  let min = Math.min(...valores), max = Math.max(...valores);
+  if(min === max){ min -= 1; max += 1; } // evita división por cero si el saldo no varió
+  const margen = (max - min) * 0.12;
+  min -= margen; max += margen;
+
+  const x = (i) => padL + (i / (puntos.length - 1)) * (W - padL - padR);
+  const y = (v) => padT + (1 - (v - min) / (max - min)) * (H - padT - padB);
+
+  const coords = puntos.map((p, i) => [x(i), y(p.saldo)]);
+  const pathLinea = coords.map((c, i) => (i === 0 ? "M" : "L") + c[0].toFixed(1) + "," + c[1].toFixed(1)).join(" ");
+  const pathArea = pathLinea + ` L${coords[coords.length-1][0].toFixed(1)},${H-padB} L${coords[0][0].toFixed(1)},${H-padB} Z`;
+
+  // 3 líneas de cuadrícula horizontal punteadas, estilo "referencia bancaria"
+  const lineasGrid = [0, 0.5, 1].map(f => {
+    const yy = padT + f * (H - padT - padB);
+    return `<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="var(--borde)" stroke-width="1" stroke-dasharray="3,3"/>`;
+  }).join("");
+
+  const colorLinea = delta >= 0 ? "var(--verde)" : "var(--rojo)";
+  const idGradiente = "gradSaldo";
+
+  cont.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Gráfico de evolución del saldo">
+      <defs>
+        <linearGradient id="${idGradiente}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${colorLinea}" stop-opacity="0.28"/>
+          <stop offset="100%" stop-color="${colorLinea}" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      ${lineasGrid}
+      <path d="${pathArea}" fill="url(#${idGradiente})" stroke="none"/>
+      <path d="${pathLinea}" fill="none" stroke="${colorLinea}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${coords[coords.length-1][0].toFixed(1)}" cy="${coords[coords.length-1][1].toFixed(1)}" r="4" fill="${colorLinea}" stroke="#fff" stroke-width="1.5"/>
+    </svg>
+  `;
+}
+
 function cambiarPeriodo(p){
   periodoActivo = p;
   document.querySelectorAll("#screen-informes .tab").forEach(t=>t.classList.toggle("active", t.dataset.periodo===p));
   renderInformes();
 }
 function renderInformes(){
+  renderGraficoSaldo();
   const txs = filtrarPorPeriodo(periodoActivo);
   const gastos = txs.filter(t=>t.tipo==="gasto");
   const ingresos = txs.filter(t=>t.tipo==="ingreso");
@@ -1177,7 +1380,7 @@ function renderInformes(){
         <div class="tx-icon">${emojiCategoria(t.categoria, t.tipo)}</div>
         <div>
           <div class="tx-name">${t.categoria}</div>
-          <div class="tx-sub">${cuenta ? cuenta.nombre : "—"}</div>
+          <div class="tx-sub">${cuenta ? cuenta.nombre : "—"} · ${formatFechaHora(t.fecha)}</div>
         </div>
       </div>
       <div class="tx-right">
@@ -1214,6 +1417,7 @@ function abrirEditarTx(id){
   if(!t) return;
   document.getElementById("et-id").value = t.id;
   document.getElementById("et-monto").value = t.monto;
+  document.getElementById("et-fecha").value = formatearParaDatetimeLocal(t.fecha);
   etTipoActual = t.tipo;
   document.getElementById("et-btn-gasto").classList.toggle("selected", t.tipo==="gasto");
   document.getElementById("et-btn-ingreso").classList.toggle("selected", t.tipo==="ingreso");
@@ -1239,6 +1443,8 @@ function guardarEdicionTx(){
   const nuevaCuentaId = parseInt(document.getElementById("et-cuenta").value);
   const nuevaCategoria = document.getElementById("et-categoria").value;
   const nuevoTipo = etTipoActual;
+  const fechaInput = document.getElementById("et-fecha").value;
+  const nuevaFecha = fechaInput ? new Date(fechaInput) : t.fecha;
 
   // revertir el efecto del movimiento original en su cuenta
   const cuentaOriginal = cuentas.find(c=>c.id===t.cuentaId);
@@ -1252,6 +1458,7 @@ function guardarEdicionTx(){
   t.monto = nuevoMonto;
   t.categoria = nuevaCategoria;
   t.cuentaId = nuevaCuentaId;
+  t.fecha = nuevaFecha;
 
   cerrarModal("modal-editar-tx");
   renderInicio();
@@ -1936,7 +2143,7 @@ function cargarDeLocalStorage(){
    ============================================================ */
 
 // 👉 PEGA AQUÍ TU CLIENT ID REAL (termina en .apps.googleusercontent.com)
-const GOOGLE_CLIENT_ID = "168033373845-6c8v0mtl3rkjcu4or81p9ruitlus5ku1.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "TU_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 
 const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 const CLAVE_GMAIL_TOKEN = "moneymas_gmail_token";       // sessionStorage: token de acceso (vive solo esta pestaña)
