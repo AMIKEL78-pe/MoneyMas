@@ -370,17 +370,77 @@
   .rec-amount{font-size:14.5px;font-weight:700;color:var(--azul-900);white-space:nowrap;}
   .rec-right{display:flex;align-items:center;gap:10px;}
 
-  /* Previsualización de importación BCP */
-  .preview-row{border:1px solid var(--borde);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--blanco);}
+  /* ============================================================
+     Previsualización de importación BCP — tarjeta ultracompacta
+     4 columnas: checkbox | icono | centro (título/fecha/categoría) | monto
+     ============================================================ */
+  .preview-row{
+    border:1px solid var(--borde);
+    border-radius:12px;
+    margin-bottom:8px;
+    background:var(--blanco);
+    overflow:hidden;
+  }
   .preview-row.omitida{opacity:.5;}
-  .preview-top{display:flex;align-items:flex-start;gap:10px;}
-  .preview-top input[type=checkbox]{width:20px;height:20px;flex-shrink:0;margin-top:2px;}
-  .preview-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;margin-bottom:4px;}
-  .preview-badge.gasto{background:var(--rojo-bg);color:var(--rojo);}
-  .preview-badge.ingreso{background:var(--verde-bg);color:var(--verde);}
-  .preview-concepto{font-size:12.5px;color:var(--gris-oscuro);line-height:1.4;margin-bottom:4px;}
-  .preview-meta{font-size:11px;color:var(--gris-medio);margin-bottom:6px;}
-  .preview-monto{font-weight:700;font-size:14px;color:var(--azul-900);}
+  .preview-card{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:10px;
+  }
+  /* Columna 1: checkbox — el <label> agranda la zona táctil real a 44px
+     aunque el cuadrito visual sea pequeño (mismo criterio que el resto
+     de la app: nunca sacrificar el área de toque por compacidad visual). */
+  .preview-check{
+    display:flex;align-items:center;justify-content:center;
+    width:var(--touch-min);height:var(--touch-min);
+    margin:0 -10px 0 -12px;
+    flex-shrink:0;
+    cursor:pointer;
+  }
+  .preview-check input{width:19px;height:19px;margin:0;}
+  /* Columna 2: icono de la operación */
+  .preview-icono{font-size:19px;flex-shrink:0;width:22px;text-align:center;}
+  /* Columna 3: centro — título, fecha corta y categoría */
+  .preview-centro{flex:1;min-width:0;}
+  .preview-titulo{font-size:12.5px;font-weight:700;color:var(--gris-oscuro);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .preview-fecha-corta{font-size:10.5px;color:var(--gris-medio);margin:1px 0 4px;}
+  .preview-select-inline{
+    width:auto;max-width:100%;
+    padding:3px 22px 3px 8px;
+    margin:0;
+    font-size:10.5px;
+    border-radius:8px;
+    background-position:right 6px center;
+    background-size:10px;
+    height:26px;
+  }
+  /* Columna 4: monto */
+  .preview-monto-col{flex-shrink:0;text-align:right;}
+  .preview-monto{font-weight:700;font-size:13.5px;white-space:nowrap;}
+  .preview-monto.gasto{color:var(--rojo);}
+  .preview-monto.ingreso{color:var(--verde);}
+  /* Botón ⓘ de detalle expandible */
+  .preview-info-btn{
+    width:var(--touch-min);height:var(--touch-min);
+    margin:0 -10px 0 0;
+    flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+    background:none;border:none;cursor:pointer;
+    font-size:15px;color:var(--gris-medio);
+  }
+  .preview-info-btn.abierto{color:var(--azul);}
+  .preview-detalle{
+    display:none;
+    padding:0 14px 12px 40px;
+    font-size:11.5px;
+    color:var(--gris-medio);
+    line-height:1.5;
+    border-top:1px dashed var(--borde);
+    margin-top:2px;
+    padding-top:8px;
+  }
+  .preview-detalle.abierto{display:block;}
 
   .cat-track-item{margin-bottom:14px;}
   .cat-track-row{display:flex;justify-content:space-between;font-size:12px;color:var(--gris-oscuro);margin-bottom:5px;font-weight:600;}
@@ -1875,7 +1935,7 @@ function cargarDeLocalStorage(){
    ============================================================ */
 
 // 👉 PEGA AQUÍ TU CLIENT ID REAL (termina en .apps.googleusercontent.com)
-const GOOGLE_CLIENT_ID = "168033373845-6c8v0mtl3rkjcu4or81p9ruitlus5ku1.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "TU_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 
 const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 const CLAVE_GMAIL_TOKEN = "moneymas_gmail_token";       // sessionStorage: token de acceso (vive solo esta pestaña)
@@ -2189,6 +2249,36 @@ function parsearFechaCorreoBCP(texto, internalDate){
   return internalDate ? new Date(parseInt(internalDate, 10)) : new Date();
 }
 
+// ---- Utilidades de presentación compacta para el listado móvil ----
+
+// "22 Ago, 07:18 PM" en vez de una fecha larga.
+function formatearFechaCorta(fecha){
+  const MESES_CORTOS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const dia = fecha.getDate();
+  const mes = MESES_CORTOS[fecha.getMonth()];
+  let hora = fecha.getHours();
+  const min = String(fecha.getMinutes()).padStart(2, "0");
+  const ampm = hora >= 12 ? "PM" : "AM";
+  hora = hora % 12; if(hora === 0) hora = 12;
+  return `${dia} ${mes}, ${String(hora).padStart(2,"0")}:${min} ${ampm}`;
+}
+
+// Convierte la oración larga extraída del correo (ej. "Realizaste un
+// retiro de S/ 160.00 con tu Tarjeta de Débito BCP en un Cajero BCP.")
+// en un ícono + título corto para la tarjeta compacta.
+function resumirCorreoBCP(textoOriginal, tipo){
+  const t = (textoOriginal || "").toLowerCase();
+  if(/retiro/.test(t))       return {icono:"🏧", titulo:"Retiro de efectivo"};
+  if(/consumo/.test(t))      return {icono:"💳", titulo:"Consumo con tarjeta"};
+  if(/yape/.test(t))         return {icono:"📲", titulo: tipo==="ingreso" ? "Yape recibido" : "Yape enviado"};
+  if(/transferen|transferiste|transfirieron/.test(t))
+                              return {icono:"📲", titulo: tipo==="ingreso" ? "Transferencia recibida" : "Transferencia enviada"};
+  if(/pagaste|pago /.test(t)) return {icono:"💳", titulo:"Pago realizado"};
+  // Sin patrón reconocido: usa las primeras palabras de la oración original.
+  const corto = (textoOriginal || "").slice(0, 34).trim();
+  return {icono: tipo==="ingreso" ? "💰" : "💸", titulo: corto + (textoOriginal && textoOriginal.length > 34 ? "…" : "")};
+}
+
 // Parser específico de correos BCP (palabras clave y formato de monto
 // distintos a los de Yape). ⚠️ Igual que el otro parser: son patrones
 // razonables según lo descrito, ajústalos si tus correos reales difieren.
@@ -2199,7 +2289,7 @@ function parsearCorreoBCP(msg){
   const textoCompleto = `${asunto}\n${cuerpo}`;
   const textoMin = textoCompleto.toLowerCase();
 
-  const esGasto = /realizaste un retiro|realizaste una transferencia|pagaste/.test(textoMin);
+  const esGasto = /realizaste un retiro|realizaste un consumo|realizaste una transferencia|pagaste/.test(textoMin);
   const esIngreso = /recibiste|te transfirieron/.test(textoMin);
   if(!esGasto && !esIngreso) return null;
   const tipo = esGasto ? "gasto" : "ingreso";
@@ -2332,14 +2422,19 @@ async function buscarCorreosBCP(){
         continue;
       }
 
+      const resumen = resumirCorreoBCP(resultado.nota, resultado.tipo);
+
       previewBCP.push({
         mensajeId: m.id,
         tipo: resultado.tipo,
         monto: resultado.monto,
-        nota: resultado.nota,
+        nota: resultado.nota,        // texto completo (oración extraída) — se muestra en el detalle expandible
+        titulo: resumen.titulo,      // título corto para la tarjeta compacta
+        icono: resumen.icono,
         fecha: resultado.fecha,
         categoria: resultado.tipo === "gasto" ? "Pagos Varios" : "Otros ingresos",
         seleccionado: true,
+        expandido: false,
         yaImportada: existeTransaccionSimilar(resultado.fecha, resultado.monto)
       });
     }
@@ -2367,24 +2462,36 @@ function renderPreviewBCP(){
 
   previewBCP.forEach((item, idx)=>{
     const opcionesCategoria = categorias[item.tipo]
-      .map(c => `<option value="${c}" ${c===item.categoria?"selected":""}>${emojiCategoria(c, item.tipo)} ${c}</option>`)
+      .map(c => `<option value="${c}" ${c===item.categoria?"selected":""}>${c}</option>`)
       .join("");
+    const signo = item.tipo === "gasto" ? "−" : "+";
+    const titulo = item.titulo || item.nota;
+    const icono = item.icono || (item.tipo === "ingreso" ? "💰" : "💸");
 
     const row = document.createElement("div");
     row.className = "preview-row" + (item.yaImportada ? " omitida" : "");
     row.innerHTML = `
-      <div class="preview-top">
-        <input type="checkbox" ${item.seleccionado ? "checked" : ""} ${item.yaImportada ? "disabled" : ""}
-               onchange="toggleSeleccionPreview(${idx}, this.checked)">
-        <div style="flex:1;">
-          <span class="preview-badge ${item.tipo}">${item.tipo==="gasto"?"💸 Gasto":"💰 Ingreso"}</span>
-          ${item.yaImportada ? '<span class="preview-badge" style="background:var(--gris-claro);color:var(--gris-medio);">Ya importado</span>' : ""}
-          <div class="preview-monto">S/. ${item.monto.toFixed(2)}</div>
-          <div class="preview-concepto">${item.nota}</div>
-          <div class="preview-meta">${item.fecha.toLocaleString("es-PE")} · BCP Ahorros</div>
-          <select onchange="actualizarCategoriaPreview(${idx}, this.value)" ${item.yaImportada ? "disabled" : ""}>${opcionesCategoria}</select>
+      <div class="preview-card">
+        <label class="preview-check" title="Seleccionar">
+          <input type="checkbox" ${item.seleccionado ? "checked" : ""} ${item.yaImportada ? "disabled" : ""}
+                 onchange="toggleSeleccionPreview(${idx}, this.checked)">
+        </label>
+
+        <div class="preview-icono">${icono}</div>
+
+        <div class="preview-centro">
+          <div class="preview-titulo">${titulo}${item.yaImportada ? " · ya importado" : ""}</div>
+          <div class="preview-fecha-corta">${formatearFechaCorta(item.fecha)}</div>
+          <select class="preview-select-inline" onchange="actualizarCategoriaPreview(${idx}, this.value)" ${item.yaImportada ? "disabled" : ""}>${opcionesCategoria}</select>
         </div>
+
+        <div class="preview-monto-col">
+          <div class="preview-monto ${item.tipo}">${signo} S/ ${item.monto.toFixed(2)}</div>
+        </div>
+
+        <button class="preview-info-btn" type="button" aria-label="Ver detalle del correo" onclick="toggleDetalleBCP(${idx}, event)">ⓘ</button>
       </div>
+      <div class="preview-detalle" id="preview-detalle-${idx}">${item.nota}</div>
     `;
     wrap.appendChild(row);
   });
@@ -2402,6 +2509,15 @@ function actualizarCategoriaPreview(idx, valor){
 function toggleTodosBCP(checked){
   previewBCP.forEach(item => { if(!item.yaImportada) item.seleccionado = checked; });
   renderPreviewBCP();
+}
+// Acordeón ⓘ: muestra/oculta el texto completo del correo sin volver a
+// dibujar toda la lista (evita perder el scroll o el foco del usuario).
+function toggleDetalleBCP(idx, ev){
+  previewBCP[idx].expandido = !previewBCP[idx].expandido;
+  const detalle = document.getElementById(`preview-detalle-${idx}`);
+  const boton = ev ? ev.currentTarget : null;
+  if(detalle) detalle.classList.toggle("abierto", previewBCP[idx].expandido);
+  if(boton) boton.classList.toggle("abierto", previewBCP[idx].expandido);
 }
 function actualizarContadorImportarBCP(){
   const n = previewBCP.filter(i => i.seleccionado && !i.yaImportada).length;
