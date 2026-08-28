@@ -370,6 +370,18 @@
   .rec-amount{font-size:14.5px;font-weight:700;color:var(--azul-900);white-space:nowrap;}
   .rec-right{display:flex;align-items:center;gap:10px;}
 
+  /* Previsualización de importación BCP */
+  .preview-row{border:1px solid var(--borde);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--blanco);}
+  .preview-row.omitida{opacity:.5;}
+  .preview-top{display:flex;align-items:flex-start;gap:10px;}
+  .preview-top input[type=checkbox]{width:20px;height:20px;flex-shrink:0;margin-top:2px;}
+  .preview-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;margin-bottom:4px;}
+  .preview-badge.gasto{background:var(--rojo-bg);color:var(--rojo);}
+  .preview-badge.ingreso{background:var(--verde-bg);color:var(--verde);}
+  .preview-concepto{font-size:12.5px;color:var(--gris-oscuro);line-height:1.4;margin-bottom:4px;}
+  .preview-meta{font-size:11px;color:var(--gris-medio);margin-bottom:6px;}
+  .preview-monto{font-weight:700;font-size:14px;color:var(--azul-900);}
+
   .cat-track-item{margin-bottom:14px;}
   .cat-track-row{display:flex;justify-content:space-between;font-size:12px;color:var(--gris-oscuro);margin-bottom:5px;font-weight:600;}
   .cat-track-row .amt{color:var(--gris-medio);font-weight:400;}
@@ -621,11 +633,50 @@
     <div class="tool-card">
       <div class="tool-head">
         <div>
+          <div class="tool-title">🗓️ Importación controlada de correos BCP</div>
+          <div class="tool-sub">Filtra por fecha, revisa cada correo antes de importarlo y elige la categoría de cada uno.</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+        <div>
+          <label style="font-size:10px;color:var(--gris-medio);display:block;margin-bottom:3px;font-weight:600;">Fecha inicio</label>
+          <input type="date" id="bcp-fecha-inicio" style="margin-top:0;">
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--gris-medio);display:block;margin-bottom:3px;font-weight:600;">Fecha fin</label>
+          <input type="date" id="bcp-fecha-fin" style="margin-top:0;">
+        </div>
+      </div>
+      <button class="btn-secondary" style="margin-top:12px;" onclick="buscarCorreosBCP()" id="btn-buscar-bcp">🔎 Buscar correos BCP</button>
+      <div class="hint" id="bcp-busqueda-detalle" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="tool-card">
+      <div class="tool-head">
+        <div>
           <div class="tool-title">Exportar datos</div>
           <div class="tool-sub">Descarga todo el historial en CSV</div>
         </div>
       </div>
       <button class="btn-secondary" style="margin-top:12px;" onclick="exportarCSV()">Exportar a CSV</button>
+    </div>
+  </div>
+
+  <!-- Modal: previsualización de correos BCP a importar -->
+  <div class="modal-overlay" id="modal-preview-bcp">
+    <div class="modal" style="max-height:90%;">
+      <button class="modal-close" onclick="cerrarModal('modal-preview-bcp')">Cerrar</button>
+      <h3>Correos BCP encontrados</h3>
+
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--gris-oscuro);padding:8px 0;border-bottom:1px solid var(--borde);margin-bottom:6px;">
+        <input type="checkbox" id="chk-todos-bcp" onchange="toggleTodosBCP(this.checked)" style="width:18px;height:18px;">
+        Seleccionar todos
+      </label>
+
+      <div id="lista-preview-bcp"></div>
+      <div class="hint" id="preview-bcp-vacio" style="display:none;">No se encontraron correos nuevos en ese rango de fechas.</div>
+
+      <button class="btn-primary" onclick="importarSeleccionadosBCP()" id="btn-importar-bcp">Importar transacciones seleccionadas (0)</button>
     </div>
   </div>
 
@@ -1824,7 +1875,7 @@ function cargarDeLocalStorage(){
    ============================================================ */
 
 // 👉 PEGA AQUÍ TU CLIENT ID REAL (termina en .apps.googleusercontent.com)
-const GOOGLE_CLIENT_ID = "168033373845-6c8v0mtl3rkjcu4or81p9ruitlus5ku1.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "TU_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 
 const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 const CLAVE_GMAIL_TOKEN = "moneymas_gmail_token";       // sessionStorage: token de acceso (vive solo esta pestaña)
@@ -2099,6 +2150,268 @@ function parsearCorreoTransaccion(msg){
 function buscarCuentaPorNombre(nombre){
   if(!nombre) return null;
   return cuentas.find(c => c.nombre.toLowerCase() === nombre.toLowerCase()) || null;
+}
+
+/* ============================================================
+   IMPORTACIÓN CONTROLADA DE CORREOS BCP
+   ============================================================
+   Reutiliza la MISMA conexión Gmail de arriba (obtenerTokenGmailVigente,
+   extraerTextoDelMensaje, buscarCuentaPorNombre) — no abre una segunda
+   sesión OAuth independiente.
+
+   Flujo: Buscar (por rango de fechas) -> Previsualizar con checkboxes
+   y categoría editable -> Importar solo lo seleccionado.
+   ============================================================ */
+
+let previewBCP = []; // candidatos a importar: {mensajeId, tipo, monto, nota, fecha, seleccionado, categoria, yaImportada}
+
+const MESES_ES = {enero:0,febrero:1,marzo:2,abril:3,mayo:4,junio:5,julio:6,agosto:7,septiembre:8,octubre:9,noviembre:10,diciembre:11};
+
+// Intenta leer una fecha en el formato que reporta el propio correo BCP
+// (ej. "22 de agosto de 2026 - 07:18 PM"). Si no la encuentra o no puede
+// interpretarla, usa internalDate (la fecha real de recepción en Gmail).
+function parsearFechaCorreoBCP(texto, internalDate){
+  const m = texto.match(/(\d{1,2})\s+de\s+([a-zA-Zé]+)\s+de\s+(\d{4})(?:\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM))?/i);
+  if(m){
+    const dia = parseInt(m[1], 10);
+    const mesTexto = m[2].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // quita tildes
+    const mes = MESES_ES[mesTexto];
+    const anio = parseInt(m[3], 10);
+    if(mes !== undefined){
+      let hora = m[4] ? parseInt(m[4], 10) : 0;
+      const min = m[5] ? parseInt(m[5], 10) : 0;
+      const ampm = m[6] ? m[6].toUpperCase() : null;
+      if(ampm === "PM" && hora < 12) hora += 12;
+      if(ampm === "AM" && hora === 12) hora = 0;
+      return new Date(anio, mes, dia, hora, min);
+    }
+  }
+  return internalDate ? new Date(parseInt(internalDate, 10)) : new Date();
+}
+
+// Parser específico de correos BCP (palabras clave y formato de monto
+// distintos a los de Yape). ⚠️ Igual que el otro parser: son patrones
+// razonables según lo descrito, ajústalos si tus correos reales difieren.
+function parsearCorreoBCP(msg){
+  const headers = msg.payload.headers || [];
+  const asunto = (headers.find(h => h.name === "Subject") || {}).value || "";
+  const cuerpo = extraerTextoDelMensaje(msg.payload);
+  const textoCompleto = `${asunto}\n${cuerpo}`;
+  const textoMin = textoCompleto.toLowerCase();
+
+  const esGasto = /realizaste un retiro|realizaste una transferencia|pagaste/.test(textoMin);
+  const esIngreso = /recibiste|te transfirieron/.test(textoMin);
+  if(!esGasto && !esIngreso) return null;
+  const tipo = esGasto ? "gasto" : "ingreso";
+
+  // Monto: busca "Total retirado S/ 160.00" primero (más específico),
+  // si no aparece cae al primer "S/ 160.00" que encuentre en el cuerpo.
+  const matchTotal = cuerpo.match(/Total\s+\w+\s+S\/\.?\s?([\d,]+\.\d{2})/i);
+  const matchGenerico = cuerpo.match(/S\/\.?\s?([\d,]+\.\d{2})/);
+  const matchMonto = matchTotal || matchGenerico;
+  if(!matchMonto) return null;
+  const monto = parseFloat(matchMonto[1].replace(/,/g, ""));
+  if(!monto || monto <= 0) return null;
+
+  // Concepto: la oración que contiene el monto (de punto a punto), o si
+  // no se puede aislar, los primeros ~120 caracteres del cuerpo.
+  const oraciones = cuerpo.split(/(?<=[.!?])\s+/);
+  const valorMonto = matchMonto[1]; // ej. "160.00", sin el prefijo "Total retirado" ni "S/"
+  const oracionesConMonto = oraciones.filter(o => o.includes(valorMonto));
+  const oracionConMonto = oracionesConMonto.sort((a, b) => b.length - a.length)[0]; // la más descriptiva
+  const concepto = (oracionConMonto || cuerpo.slice(0, 120)).trim();
+
+  const fecha = parsearFechaCorreoBCP(cuerpo, msg.internalDate);
+
+  return { tipo, monto, nota: concepto, fecha };
+}
+
+// Revisa si ya existe un movimiento con la misma fecha (mismo día) y
+// monto exacto — capa extra de seguridad además del filtro por ID de
+// correo ya procesado.
+function existeTransaccionSimilar(fecha, monto){
+  return transacciones.some(t =>
+    Math.abs(t.monto - monto) < 0.005 &&
+    t.fecha.toDateString() === fecha.toDateString()
+  );
+}
+
+function toggleMostrarLoadingBCP(cargando){
+  const boton = document.getElementById("btn-buscar-bcp");
+  if(boton){ boton.disabled = cargando; boton.textContent = cargando ? "Buscando…" : "🔎 Buscar correos BCP"; }
+}
+
+async function buscarCorreosBCP(){
+  const inicioStr = document.getElementById("bcp-fecha-inicio").value;
+  const finStr = document.getElementById("bcp-fecha-fin").value;
+  const detalle = document.getElementById("bcp-busqueda-detalle");
+
+  if(!inicioStr || !finStr){
+    if(detalle) detalle.textContent = "⚠️ Elige fecha de inicio y fecha fin.";
+    return;
+  }
+  if(inicioStr > finStr){
+    if(detalle) detalle.textContent = "⚠️ La fecha de inicio no puede ser posterior a la fecha fin.";
+    return;
+  }
+
+  const token = obtenerTokenGmailVigente();
+  if(!token){
+    alert("Primero conecta tu cuenta con el botón 'Conectar con Gmail' de la tarjeta de arriba.");
+    return;
+  }
+
+  if(detalle) detalle.textContent = "";
+  toggleMostrarLoadingBCP(true);
+
+  try{
+    // Gmail: after: es inclusivo, before: es EXCLUSIVO — le sumamos un
+    // día a "fin" para que el usuario sí obtenga los correos de ese día.
+    const fmt = (d) => d.toISOString().slice(0,10).replace(/-/g, "/");
+    const finExclusivo = new Date(finStr + "T00:00:00");
+    finExclusivo.setDate(finExclusivo.getDate() + 1);
+    const q = `from:(bcp.com.pe OR notificacionesbcp@bcp.com.pe) after:${inicioStr.replace(/-/g,"/")} before:${fmt(finExclusivo)}`;
+
+    const listaResp = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=50`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if(!listaResp.ok) throw new Error("Gmail API respondió " + listaResp.status);
+    const listaJson = await listaResp.json();
+    const mensajes = listaJson.messages || [];
+
+    const procesados = new Set(JSON.parse(localStorage.getItem(CLAVE_GMAIL_PROCESADOS) || "[]"));
+    previewBCP = [];
+
+    for(const m of mensajes){
+      if(procesados.has(m.id)) continue; // ya se importó antes por cualquiera de las dos herramientas
+
+      const msgResp = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if(!msgResp.ok) continue;
+      const msg = await msgResp.json();
+
+      const resultado = parsearCorreoBCP(msg);
+      if(!resultado) continue;
+
+      previewBCP.push({
+        mensajeId: m.id,
+        tipo: resultado.tipo,
+        monto: resultado.monto,
+        nota: resultado.nota,
+        fecha: resultado.fecha,
+        categoria: resultado.tipo === "gasto" ? "Pagos Varios" : "Otros ingresos",
+        seleccionado: true,
+        yaImportada: existeTransaccionSimilar(resultado.fecha, resultado.monto)
+      });
+    }
+
+    renderPreviewBCP();
+    abrirModal("modal-preview-bcp");
+    if(detalle) detalle.textContent = previewBCP.length + " correo(s) encontrado(s).";
+  }catch(err){
+    console.error("Error buscando correos BCP:", err);
+    if(detalle) detalle.textContent = "⚠️ " + err.message;
+  }finally{
+    toggleMostrarLoadingBCP(false);
+  }
+}
+
+function renderPreviewBCP(){
+  // Asegura que "Pagos Varios" exista como categoría real y elegible,
+  // igual que cualquier otra (sin inventar un campo aparte del sistema).
+  if(!categorias.gasto.includes("Pagos Varios")) categorias.gasto.push("Pagos Varios");
+
+  const wrap = document.getElementById("lista-preview-bcp");
+  const vacio = document.getElementById("preview-bcp-vacio");
+  wrap.innerHTML = "";
+  vacio.style.display = previewBCP.length === 0 ? "block" : "none";
+
+  previewBCP.forEach((item, idx)=>{
+    const opcionesCategoria = categorias[item.tipo]
+      .map(c => `<option value="${c}" ${c===item.categoria?"selected":""}>${emojiCategoria(c, item.tipo)} ${c}</option>`)
+      .join("");
+
+    const row = document.createElement("div");
+    row.className = "preview-row" + (item.yaImportada ? " omitida" : "");
+    row.innerHTML = `
+      <div class="preview-top">
+        <input type="checkbox" ${item.seleccionado ? "checked" : ""} ${item.yaImportada ? "disabled" : ""}
+               onchange="toggleSeleccionPreview(${idx}, this.checked)">
+        <div style="flex:1;">
+          <span class="preview-badge ${item.tipo}">${item.tipo==="gasto"?"💸 Gasto":"💰 Ingreso"}</span>
+          ${item.yaImportada ? '<span class="preview-badge" style="background:var(--gris-claro);color:var(--gris-medio);">Ya importado</span>' : ""}
+          <div class="preview-monto">S/. ${item.monto.toFixed(2)}</div>
+          <div class="preview-concepto">${item.nota}</div>
+          <div class="preview-meta">${item.fecha.toLocaleString("es-PE")} · BCP Ahorros</div>
+          <select onchange="actualizarCategoriaPreview(${idx}, this.value)" ${item.yaImportada ? "disabled" : ""}>${opcionesCategoria}</select>
+        </div>
+      </div>
+    `;
+    wrap.appendChild(row);
+  });
+
+  actualizarContadorImportarBCP();
+}
+
+function toggleSeleccionPreview(idx, checked){
+  previewBCP[idx].seleccionado = checked;
+  actualizarContadorImportarBCP();
+}
+function actualizarCategoriaPreview(idx, valor){
+  previewBCP[idx].categoria = valor;
+}
+function toggleTodosBCP(checked){
+  previewBCP.forEach(item => { if(!item.yaImportada) item.seleccionado = checked; });
+  renderPreviewBCP();
+}
+function actualizarContadorImportarBCP(){
+  const n = previewBCP.filter(i => i.seleccionado && !i.yaImportada).length;
+  const boton = document.getElementById("btn-importar-bcp");
+  if(boton){
+    boton.textContent = `Importar transacciones seleccionadas (${n})`;
+    boton.disabled = n === 0;
+  }
+}
+
+function importarSeleccionadosBCP(){
+  const cuenta = buscarCuentaPorNombre("BCP Ahorros");
+  if(!cuenta){
+    alert('No se encontró ninguna cuenta llamada "BCP Ahorros". Renombra tu cuenta BCP a ese nombre exacto o crea una desde Configuración antes de importar.');
+    return;
+  }
+
+  const procesados = new Set(JSON.parse(localStorage.getItem(CLAVE_GMAIL_PROCESADOS) || "[]"));
+  let importados = 0;
+
+  previewBCP
+    .filter(item => item.seleccionado && !item.yaImportada)
+    .forEach(item => {
+      transacciones.unshift({
+        id: nextId++,
+        tipo: item.tipo,
+        monto: item.monto,
+        categoria: item.categoria,
+        cuentaId: cuenta.id,
+        fecha: item.fecha,
+        nota: item.nota
+      });
+      cuenta.saldo += item.tipo === "ingreso" ? item.monto : -item.monto;
+      procesados.add(item.mensajeId);
+      importados++;
+    });
+
+  localStorage.setItem(CLAVE_GMAIL_PROCESADOS, JSON.stringify([...procesados]));
+  if(importados > 0) guardarEnLocalStorage();
+
+  cerrarModal("modal-preview-bcp");
+  previewBCP = [];
+  renderInicio(); renderInformes(); renderMovimientos(); renderPresupuesto(); renderCuentas();
+
+  const detalle = document.getElementById("bcp-busqueda-detalle");
+  if(detalle) detalle.textContent = `✅ ${importados} movimiento(s) importado(s) a BCP Ahorros.`;
 }
 
 /* ---------- INIT ---------- */
