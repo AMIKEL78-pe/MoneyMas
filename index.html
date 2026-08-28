@@ -1875,7 +1875,7 @@ function cargarDeLocalStorage(){
    ============================================================ */
 
 // 👉 PEGA AQUÍ TU CLIENT ID REAL (termina en .apps.googleusercontent.com)
-const GOOGLE_CLIENT_ID = "168033373845-6c8v0mtl3rkjcu4or81p9ruitlus5ku1.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "TU_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 
 const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 const CLAVE_GMAIL_TOKEN = "moneymas_gmail_token";       // sessionStorage: token de acceso (vive solo esta pestaña)
@@ -2246,11 +2246,7 @@ async function buscarCorreosBCP(){
   const finStr = document.getElementById("bcp-fecha-fin").value;
   const detalle = document.getElementById("bcp-busqueda-detalle");
 
-  if(!inicioStr || !finStr){
-    if(detalle) detalle.textContent = "⚠️ Elige fecha de inicio y fecha fin.";
-    return;
-  }
-  if(inicioStr > finStr){
+  if(inicioStr && finStr && inicioStr > finStr){
     if(detalle) detalle.textContent = "⚠️ La fecha de inicio no puede ser posterior a la fecha fin.";
     return;
   }
@@ -2265,19 +2261,50 @@ async function buscarCorreosBCP(){
   toggleMostrarLoadingBCP(true);
 
   try{
-    // Gmail: after: es inclusivo, before: es EXCLUSIVO — le sumamos un
-    // día a "fin" para que el usuario sí obtenga los correos de ese día.
+    // 1) Base de búsqueda por PALABRAS CLAVE en vez de un dominio "from:"
+    //    exacto — así no depende de qué dirección use BCP para notificar,
+    //    solo de que el correo se vea/lea como una notificación real.
+    //    El filtrado fino (tipo de operación, monto, etc.) ya lo hace
+    //    parsearCorreoBCP() después, así que sobre-buscar aquí es seguro.
+    const queryBase = 'BCP OR "BCP Notificaciones" OR "Realizaste un consumo" OR "Realizaste un retiro" OR "Recibiste"';
+
+    // 2) Fechas: after: es inclusivo, before: es EXCLUSIVO en Gmail, por
+    //    eso a "fin" se le suma 1 día. Si el usuario deja los campos
+    //    vacíos, se omiten esos operadores y se traen las últimas
+    //    notificaciones sin restricción de fecha.
     const fmt = (d) => d.toISOString().slice(0,10).replace(/-/g, "/");
-    const finExclusivo = new Date(finStr + "T00:00:00");
-    finExclusivo.setDate(finExclusivo.getDate() + 1);
-    const q = `from:(bcp.com.pe OR notificacionesbcp@bcp.com.pe) after:${inicioStr.replace(/-/g,"/")} before:${fmt(finExclusivo)}`;
+    let filtroFechas = "";
+    if(inicioStr) filtroFechas += ` after:${inicioStr.replace(/-/g,"/")}`;
+    if(finStr){
+      const finExclusivo = new Date(finStr + "T00:00:00");
+      finExclusivo.setDate(finExclusivo.getDate() + 1);
+      filtroFechas += ` before:${fmt(finExclusivo)}`;
+    }
+
+    // El OR va entre paréntesis para que Gmail no confunda su precedencia
+    // al combinarlo con after:/before: (son términos AND implícitos).
+    const queryFinal = `(${queryBase})${filtroFechas}`.trim();
+    console.log("Consulta Gmail API:", queryFinal);
+
+    // Sin fechas = búsqueda amplia: limitamos a las últimas notificaciones
+    // en vez de traer todo el historial de una vez.
+    const maxResults = filtroFechas ? 50 : 20;
 
     const listaResp = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=50`,
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(queryFinal)}&maxResults=${maxResults}`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    if(!listaResp.ok) throw new Error("Gmail API respondió " + listaResp.status);
+    // Se clona la respuesta ANTES de leer el body, porque el body de un
+    // Response solo se puede consumir una vez (si no, el .json() de abajo
+    // fallaría con "body stream already read").
+    console.log("Respuesta raw de Gmail API:", listaResp.clone());
+    if(!listaResp.ok){
+      const textoError = await listaResp.text().catch(()=> "");
+      console.log("Cuerpo del error de Gmail API:", textoError);
+      throw new Error("Gmail API respondió " + listaResp.status + " — revisa la consola para el detalle.");
+    }
     const listaJson = await listaResp.json();
+    console.log("Cuerpo JSON de Gmail API (lista de mensajes):", listaJson);
     const mensajes = listaJson.messages || [];
 
     const procesados = new Set(JSON.parse(localStorage.getItem(CLAVE_GMAIL_PROCESADOS) || "[]"));
@@ -2286,15 +2313,24 @@ async function buscarCorreosBCP(){
     for(const m of mensajes){
       if(procesados.has(m.id)) continue; // ya se importó antes por cualquiera de las dos herramientas
 
+      // format:"full" es obligatorio aquí (no "snippet"): necesitamos el
+      // cuerpo completo del correo para que el regex de parsearCorreoBCP
+      // pueda extraer monto, concepto y fecha con precisión.
       const msgResp = await fetch(
         `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      if(!msgResp.ok) continue;
+      if(!msgResp.ok){
+        console.log(`Correo ${m.id}: Gmail API respondió ${msgResp.status} al pedir el detalle, se omite.`);
+        continue;
+      }
       const msg = await msgResp.json();
 
       const resultado = parsearCorreoBCP(msg);
-      if(!resultado) continue;
+      if(!resultado){
+        console.log(`Correo ${m.id}: no coincide con ningún patrón de transacción conocido, se omite.`, msg.snippet);
+        continue;
+      }
 
       previewBCP.push({
         mensajeId: m.id,
@@ -2310,7 +2346,7 @@ async function buscarCorreosBCP(){
 
     renderPreviewBCP();
     abrirModal("modal-preview-bcp");
-    if(detalle) detalle.textContent = previewBCP.length + " correo(s) encontrado(s).";
+    if(detalle) detalle.textContent = previewBCP.length + " correo(s) encontrado(s) de " + mensajes.length + " revisado(s).";
   }catch(err){
     console.error("Error buscando correos BCP:", err);
     if(detalle) detalle.textContent = "⚠️ " + err.message;
