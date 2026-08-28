@@ -1,8 +1,14 @@
 <!DOCTYPE html>
 <html lang="es">
-<head><title>Política de Privacidad - MoneyMas</title></head>
-<body>
-  <h1>Política de Privacidad</h1>
-  <p>MoneyMas no comparte ni vende tus datos con terceros. La lectura de correos se limita estrictamente al procesamiento local de notificaciones bancarias.</p>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Política de Privacidad - MoneyMas</title>
+</head>
+<body style="font-family: sans-serif; padding: 20px; line-height: 1.6;">
+    <h1>Política de Privacidad de MoneyMas</h1>
+    <p>MoneyMas utiliza el acceso a Gmail exclusivamente para leer notificaciones bancarias de transferencias (como BCP o Yape) y registrar los movimientos financieros del usuario dentro de la aplicación de forma local.</p>
+    <p>No compartimos, vendemos ni transferimos datos de los usuarios a terceros bajo ninguna circunstancia.</p>
+    <p><a href="index.html">Volver a la aplicación</a></p>
 </body>
 </html>
