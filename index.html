@@ -22,6 +22,9 @@
     --verde-bg:#ECFDF5;
     --rojo:#E11D48;
     --rojo-bg:#FFF1F2;
+    --teal:#14B8A6;
+    --teal-dark:#0D9488;
+    --naranja:#F97316;
     --blanco:#FFFFFF;
     --radius:16px;
     --font-display:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -100,8 +103,8 @@
   .bell{width:22px;height:22px;color:var(--azul-900);}
 
   .balance-card{
-    background:linear-gradient(135deg,var(--azul-900) 0%,var(--azul-800) 55%,var(--azul) 100%);
-    border-radius:var(--radius);
+    background:linear-gradient(135deg,var(--azul-900) 0%,var(--azul-800) 45%,var(--teal-dark) 100%);
+    border-radius:20px;
     padding:22px 22px 20px;
     margin-bottom:24px;
     box-shadow:0 10px 26px rgba(11,37,69,.28);
@@ -116,6 +119,70 @@
   .balance-value{font-family:var(--font-display);font-size:clamp(1.7rem, 8vw, 2.1rem);font-weight:700;color:#fff;margin-bottom:10px;}
   .balance-detail{font-size:12px;color:rgba(255,255,255,.75);border-top:1px solid rgba(147,197,253,.35);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;}
   .balance-chip{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:20px;padding:5px 10px;font-size:11.5px;font-weight:600;color:#fff;}
+
+  /* ============================================================
+     REDISEÑO VISUAL DE INICIO — todo lo de aquí abajo hasta el
+     siguiente comentario de sección aplica ÚNICAMENTE a elementos
+     exclusivos de #screen-inicio (confirmado: ninguna de estas
+     clases/IDs se reutiliza en otra pantalla o modal).
+     ============================================================ */
+  .logo-inicio{display:flex;align-items:center;gap:8px;}
+  .logo-isotipo{
+    width:28px;height:28px;border-radius:9px;
+    background:linear-gradient(135deg,var(--teal),var(--teal-dark));
+    color:#fff;font-family:var(--font-display);font-weight:800;font-size:15px;
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+  }
+  .bell-wrap{position:relative;display:inline-flex;}
+  .bell-dot{
+    position:absolute;top:-2px;right:-2px;width:9px;height:9px;border-radius:50%;
+    background:var(--azul);border:2px solid var(--fondo);
+  }
+
+  /* Paso 1: campo de monto envuelto en tarjeta blanca */
+  .amount-card{
+    background:var(--blanco);border-radius:18px;box-shadow:var(--shadow-card);
+    border:1px solid var(--borde);padding:14px 12px 10px;
+  }
+  .amount-card .amount-input{padding:0;}
+  .amount-hint{text-align:center;font-size:11px;color:var(--gris-medio);margin-top:2px;}
+
+  /* Numeración circular de cada paso */
+  .step-label{display:flex;align-items:center;gap:9px;}
+  .step-num{
+    width:22px;height:22px;border-radius:50%;flex-shrink:0;
+    background:var(--azul);color:#fff;font-size:12px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;
+  }
+
+  /* Selector de categoría / fecha con apariencia de "fila seleccionable" */
+  .selector-row{
+    background:var(--blanco);border:1.5px solid var(--borde);border-radius:16px;
+    box-shadow:var(--shadow-card);
+  }
+  .selector-row select{border:none;box-shadow:none;margin:0;}
+  .selector-fecha{
+    display:flex;align-items:center;gap:10px;
+    padding:0 16px;min-height:var(--touch-min);
+    margin-top:10px;cursor:pointer;
+  }
+  .selector-fecha.activa{border-color:var(--azul);}
+  .selector-icono{font-size:16px;}
+  .selector-texto{flex:1;font-size:13.5px;font-weight:600;color:var(--gris-oscuro);}
+  .selector-flecha{color:var(--gris-medio);font-size:16px;transform:rotate(90deg);}
+
+  /* Botón principal de Registrar (degradado azul → teal, exclusivo de Inicio) */
+  .btn-registrar{
+    width:100%;padding:18px 0;border-radius:18px;border:none;
+    background:linear-gradient(135deg,var(--azul),var(--teal));
+    color:#fff;font-size:16.5px;font-weight:700;cursor:pointer;margin-top:22px;
+    box-shadow:0 10px 20px rgba(20,184,166,.25);letter-spacing:.2px;
+  }
+  .btn-registrar:active{filter:brightness(.94);box-shadow:none;}
+  /* ============================================================
+     FIN del rediseño exclusivo de Inicio
+     ============================================================ */
 
   .step-label{font-size:13px;font-weight:700;color:var(--azul-900);margin-bottom:9px;margin-top:22px;}
   .amount-input{
@@ -142,6 +209,12 @@
   }
   .tipo-btn.gasto.selected{border-color:var(--rojo);color:var(--rojo);background:var(--rojo-bg);}
   .tipo-btn.ingreso.selected{border-color:var(--verde);color:var(--verde);background:var(--verde-bg);}
+  /* Solo en Inicio (#btn-gasto/#btn-ingreso): naranja/azul en vez del
+     rojo/verde compartido de arriba. El modal "Editar movimiento"
+     (#et-btn-gasto/#et-btn-ingreso) NO usa estos IDs, así que conserva
+     el rojo/verde de siempre — coherente con el resto de la app. */
+  #btn-gasto.selected{border-color:var(--naranja);color:#fff;background:var(--naranja);}
+  #btn-ingreso.selected{border-color:var(--azul);color:#fff;background:var(--azul);}
 
   .pill-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;}
   .pill{
@@ -545,37 +618,52 @@
   <!-- PANTALLA 1: INICIO -->
   <div class="screen active" id="screen-inicio">
     <div class="top-row">
-      <h1 class="app-title">MoneyMas</h1>
-      <svg class="bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+      <div class="logo-inicio">
+        <span class="logo-isotipo">M</span>
+        <h1 class="app-title" style="margin:0;">MoneyMas</h1>
+      </div>
+      <div class="bell-wrap">
+        <svg class="bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+        <span class="bell-dot"></span>
+      </div>
     </div>
 
     <div class="balance-card">
-      <div class="balance-label">Saldo total en cuentas</div>
+      <div class="balance-label">
+        Saldo total
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;opacity:.8;"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+      </div>
       <div class="balance-value" id="saldo-total">S/. 0.00</div>
       <div class="balance-detail" id="saldo-detalle"></div>
     </div>
 
+    <div class="step-label"><span class="step-num">1</span> ¿Cuánto?</div>
+    <div class="amount-card">
+      <input type="text" class="amount-input" id="monto-input" inputmode="decimal" placeholder="0.00" value="">
+      <div class="amount-hint">Ingresa el monto</div>
+    </div>
 
-    <div class="step-label">Paso 1 · ¿Cuánto?</div>
-    <input type="text" class="amount-input" id="monto-input" inputmode="decimal" placeholder="0.00" value="">
-
-    <div class="step-label">Paso 2 · ¿Qué es?</div>
+    <div class="step-label"><span class="step-num">2</span> ¿Qué es?</div>
     <div class="tipo-row">
-      <button class="tipo-btn gasto" id="btn-gasto" onclick="seleccionarTipo('gasto')">💸 Gasto</button>
-      <button class="tipo-btn ingreso" id="btn-ingreso" onclick="seleccionarTipo('ingreso')">💰 Ingreso</button>
+      <button class="tipo-btn gasto" id="btn-gasto" onclick="seleccionarTipo('gasto')">↓ Gasto</button>
+      <button class="tipo-btn ingreso" id="btn-ingreso" onclick="seleccionarTipo('ingreso')">↑ Ingreso</button>
     </div>
 
-    <div class="step-label">Paso 3 · ¿Dónde y qué categoría?</div>
+    <div class="step-label"><span class="step-num">3</span> ¿Dónde y qué categoría?</div>
     <div class="pill-row" id="pill-cuentas"></div>
-    <select id="select-categoria"></select>
-
-    <div class="fecha-toggle-row">
-      <button type="button" class="pill" id="pill-fecha-hoy" onclick="toggleFechaManual()">📅 Hoy</button>
-      <span class="hint" style="margin:0;" id="fecha-hoy-hint"></span>
+    <div class="selector-row">
+      <select id="select-categoria"></select>
     </div>
+
+    <div class="selector-row selector-fecha" id="pill-fecha-hoy" onclick="toggleFechaManual()">
+      <span class="selector-icono">📅</span>
+      <span class="selector-texto" id="fecha-hoy-texto">Hoy</span>
+      <span class="selector-flecha">›</span>
+    </div>
+    <span class="hint" id="fecha-hoy-hint"></span>
     <input type="datetime-local" id="fecha-manual-input" style="display:none;" onchange="actualizarFechaHintInicio()">
 
-    <button class="btn-primary" onclick="registrarMovimiento()">Registrar movimiento</button>
+    <button class="btn-registrar" onclick="registrarMovimiento()">+ Registrar movimiento</button>
     <div class="hint">La moneda se toma de la cuenta seleccionada</div>
   </div>
 
@@ -1087,8 +1175,9 @@ function renderInicio(){
   pillWrap.innerHTML = "";
   cuentas.forEach(c=>{
     const p = document.createElement("div");
-    p.className = "pill" + (c.id===cuentaSeleccionada ? " selected" : "");
-    p.textContent = `${emojiCuenta(c.tipo)} ${c.nombre}`;
+    const seleccionada = c.id === cuentaSeleccionada;
+    p.className = "pill" + (seleccionada ? " selected" : "");
+    p.innerHTML = `${emojiCuenta(c.tipo)} ${c.nombre}` + (seleccionada ? ' <span style="color:var(--verde);font-weight:900;">✓</span>' : "");
     p.onclick = ()=>{ cuentaSeleccionada = c.id; renderInicio(); };
     pillWrap.appendChild(p);
   });
@@ -1118,9 +1207,10 @@ let fechaManualActiva = false;
 function toggleFechaManual(){
   fechaManualActiva = !fechaManualActiva;
   const pill = document.getElementById("pill-fecha-hoy");
+  const texto = document.getElementById("fecha-hoy-texto");
   const input = document.getElementById("fecha-manual-input");
   pill.classList.toggle("activa", fechaManualActiva);
-  pill.textContent = fechaManualActiva ? "📅 Otra fecha" : "📅 Hoy";
+  texto.textContent = fechaManualActiva ? "Otra fecha" : "Hoy";
   input.style.display = fechaManualActiva ? "block" : "none";
   if(fechaManualActiva && !input.value){
     input.value = formatearParaDatetimeLocal(new Date());
