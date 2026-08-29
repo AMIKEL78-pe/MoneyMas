@@ -41,7 +41,8 @@
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     background:#E7ECF3;
     display:flex;
-    justify-content:center;
+    flex-direction:column;
+    align-items:center;
     min-height:100dvh; /* dvh: evita saltos al mostrar/ocultar la barra del navegador móvil */
   }
   /* ============================================================
@@ -2786,7 +2787,7 @@ document.addEventListener("DOMContentLoaded", function(){
 <!-- Pie de página — fuera de .app-container a propósito: ese contenedor
      usa overflow:hidden, así que cualquier cosa dentro de él después de
      la barra de navegación quedaría recortada/invisible. -->
-<footer style="text-align:center;padding:20px 10px;margin-top:12px;font-size:12px;color:var(--gris-medio);">
+<footer style="text-align:center;padding:20px 10px;margin-top:12px;font-size:12px;color:var(--gris-medio);width:100%;max-width:480px;box-sizing:border-box;">
   <p style="margin:4px 0;">© MoneyMas — Todos los derechos reservados</p>
 </footer>
 </body>
