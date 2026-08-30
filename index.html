@@ -2681,12 +2681,17 @@ function parsearCorreoBCP(msg){
   const monto = parseFloat(matchMonto[1].replace(/,/g, ""));
   if(!monto || monto <= 0) return null;
 
-  // Concepto: la oración que contiene el monto (de punto a punto), o si
-  // no se puede aislar, los primeros ~120 caracteres del cuerpo.
+  // Concepto: de las oraciones que mencionan el monto, se prefiere la que
+  // tiene un verbo de acción ("Realizaste...", "Generaste...") — esa es
+  // siempre la frase natural y corta que describe la operación. Sin este
+  // filtro, en correos con tabla de datos (Monto/Operación/Fecha/etc. sin
+  // puntos entre medio) se termina agarrando ese bloque completo como si
+  // fuera "una oración", por ser el texto más largo que menciona el monto.
   const oraciones = cuerpo.split(/(?<=[.!?])\s+/);
-  const valorMonto = matchMonto[1]; // ej. "160.00", sin el prefijo "Total retirado" ni "S/"
-  const oracionesConMonto = oraciones.filter(o => o.includes(valorMonto));
-  const oracionConMonto = oracionesConMonto.sort((a, b) => b.length - a.length)[0]; // la más descriptiva
+  const valorMonto = matchMonto[1]; // ej. "160.00" o "2,119.00", sin el prefijo ni "S/"
+  const candidatas = oraciones.filter(o => o.includes(valorMonto));
+  const conVerboAccion = candidatas.filter(o => /realizaste|generaste|recibiste|pagaste|transferiste/i.test(o));
+  const oracionConMonto = (conVerboAccion.length ? conVerboAccion : candidatas).sort((a, b) => a.length - b.length)[0];
   const concepto = (oracionConMonto || cuerpo.slice(0, 120)).trim();
 
   const fecha = parsearFechaCorreoBCP(cuerpo, msg.internalDate);
