@@ -2729,12 +2729,12 @@ async function buscarCorreosBCP(){
   toggleMostrarLoadingBCP(true);
 
   try{
-    // 1) Base de búsqueda por PALABRAS CLAVE en vez de un dominio "from:"
-    //    exacto — así no depende de qué dirección use BCP para notificar,
-    //    solo de que el correo se vea/lea como una notificación real.
-    //    El filtrado fino (tipo de operación, monto, etc.) ya lo hace
-    //    parsearCorreoBCP() después, así que sobre-buscar aquí es seguro.
-    const queryBase = 'BCP OR "BCP Notificaciones" OR "Realizaste un consumo" OR "Realizaste un retiro" OR "Recibiste"';
+    // 1) Base de búsqueda: además de las palabras clave por si el cuerpo/
+    //    asunto varía, se agrega el remitente REAL exacto que confirmaste
+    //    en tu bandeja ("BCP Notificaciones <notificaciones@notificacionesbcp.com.pe>").
+    //    Con from: explícito no dependemos solo de que la palabra "BCP"
+    //    aparezca en el texto — cualquier correo de ese remitente entra sí o sí.
+    const queryBase = 'from:notificaciones@notificacionesbcp.com.pe OR BCP OR "BCP Notificaciones" OR "Realizaste un consumo" OR "Realizaste un retiro" OR "Realizaste una transferencia" OR "Transferencia a Terceros" OR "Transferencia a Otros Bancos" OR "Retiro Sin Tarjeta" OR "Recibiste"';
 
     // 2) Fechas: after: es inclusivo, before: es EXCLUSIVO en Gmail, por
     //    eso a "fin" se le suma 1 día. Si el usuario deja los campos
@@ -2754,26 +2754,40 @@ async function buscarCorreosBCP(){
     const queryFinal = `(${queryBase})${filtroFechas}`.trim();
     console.log("Consulta Gmail API:", queryFinal);
 
-    // Sin fechas = búsqueda amplia: limitamos a las últimas notificaciones
-    // en vez de traer todo el historial de una vez.
-    const maxResults = filtroFechas ? 50 : 20;
+    // 3) Paginación real: antes solo se pedía UNA página (20 o 50 resultados)
+    //    y si había correos irrelevantes mezclados (ej. el newsletter de
+    //    Credicorp) que también matchean "BCP", podían "robarle el lugar"
+    //    a notificaciones reales más viejas dentro de ese límite. Ahora se
+    //    sigue pidiendo página tras página (con nextPageToken) hasta agotar
+    //    los resultados o llegar a un tope de seguridad de 200 correos.
+    let mensajes = [];
+    let pageToken = null;
+    let paginas = 0;
+    const TOPE_SEGURIDAD = 200;
+    do{
+      const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
+      url.searchParams.set("q", queryFinal);
+      url.searchParams.set("maxResults", "100");
+      if(pageToken) url.searchParams.set("pageToken", pageToken);
 
-    const listaResp = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(queryFinal)}&maxResults=${maxResults}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    // Se clona la respuesta ANTES de leer el body, porque el body de un
-    // Response solo se puede consumir una vez (si no, el .json() de abajo
-    // fallaría con "body stream already read").
-    console.log("Respuesta raw de Gmail API:", listaResp.clone());
-    if(!listaResp.ok){
-      const textoError = await listaResp.text().catch(()=> "");
-      console.log("Cuerpo del error de Gmail API:", textoError);
-      throw new Error("Gmail API respondió " + listaResp.status + " — revisa la consola para el detalle.");
-    }
-    const listaJson = await listaResp.json();
-    console.log("Cuerpo JSON de Gmail API (lista de mensajes):", listaJson);
-    const mensajes = listaJson.messages || [];
+      const listaResp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      // Se clona la respuesta ANTES de leer el body, porque el body de un
+      // Response solo se puede consumir una vez (si no, el .json() de abajo
+      // fallaría con "body stream already read").
+      console.log(`Respuesta raw de Gmail API (página ${paginas+1}):`, listaResp.clone());
+      if(!listaResp.ok){
+        const textoError = await listaResp.text().catch(()=> "");
+        console.log("Cuerpo del error de Gmail API:", textoError);
+        throw new Error("Gmail API respondió " + listaResp.status + " — revisa la consola para el detalle.");
+      }
+      const listaJson = await listaResp.json();
+      console.log(`Cuerpo JSON de Gmail API (página ${paginas+1}):`, listaJson);
+      mensajes = mensajes.concat(listaJson.messages || []);
+      pageToken = listaJson.nextPageToken || null;
+      paginas++;
+    } while(pageToken && mensajes.length < TOPE_SEGURIDAD);
+
+    console.log(`Total de correos encontrados tras ${paginas} página(s):`, mensajes.length);
 
     const procesados = new Set(JSON.parse(localStorage.getItem(CLAVE_GMAIL_PROCESADOS) || "[]"));
     previewBCP = [];
