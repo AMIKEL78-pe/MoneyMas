@@ -2497,7 +2497,8 @@ async function buscarYProcesarCorreos(token){
 // Decodifica el cuerpo del correo (Gmail lo entrega en base64url) y
 // devuelve texto plano, prefiriendo la parte text/plain si existe.
 function extraerTextoDelMensaje(payload){
-  function decodificar(data){
+  // Decodifica base64url a texto plano (sin tocar HTML/espacios todavía).
+  function decodificarBase64(data){
     if(!data) return "";
     const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
     try{
@@ -2506,17 +2507,27 @@ function extraerTextoDelMensaje(payload){
       return atob(base64);
     }
   }
+  // Los correos de banco suelen ser HTML con tablas/celdas: al quitar las
+  // etiquetas quedan saltos de línea y espacios múltiples entre palabras
+  // ("Realizaste \n una \n transferencia"). Sin esto, un regex como
+  // /realizaste una transferencia/ nunca matchea y el correo se descarta
+  // en silencio. Se colapsa TODO espacio en blanco (incluye \n, \t, NBSP)
+  // a uno solo para que el texto quede parejo siempre, venga de HTML o texto plano.
+  function normalizarEspacios(texto){
+    return texto.replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
+  }
+
   if(payload.parts && payload.parts.length){
     const textoPlano = payload.parts.find(p => p.mimeType === "text/plain");
-    if(textoPlano && textoPlano.body && textoPlano.body.data) return decodificar(textoPlano.body.data);
+    if(textoPlano && textoPlano.body && textoPlano.body.data) return normalizarEspacios(decodificarBase64(textoPlano.body.data));
     const html = payload.parts.find(p => p.mimeType === "text/html");
-    if(html && html.body && html.body.data) return decodificar(html.body.data).replace(/<[^>]+>/g, " ");
+    if(html && html.body && html.body.data) return normalizarEspacios(decodificarBase64(html.body.data).replace(/<[^>]+>/g, " "));
     // Multipart anidado (ej. multipart/mixed conteniendo multipart/alternative)
     for(const p of payload.parts){
       if(p.parts) { const t = extraerTextoDelMensaje(p); if(t) return t; }
     }
   }
-  if(payload.body && payload.body.data) return decodificar(payload.body.data);
+  if(payload.body && payload.body.data) return normalizarEspacios(decodificarBase64(payload.body.data));
   return "";
 }
 
@@ -2544,8 +2555,8 @@ function parsearCorreoTransaccion(msg){
 
   // Tipo de operación según palabras clave del asunto/cuerpo.
   const textoMin = textoCompleto.toLowerCase();
-  const esGasto = /yapeaste|transferiste|pagaste|env[ií]o exitoso/.test(textoMin);
-  const esIngreso = /te yapearon|recibiste|transferencia recibida/.test(textoMin);
+  const esGasto = /yapeaste|transferiste|pagaste|env[ií]o\s+exitoso/.test(textoMin);
+  const esIngreso = /te\s+yapearon|recibiste|transferencia\s+recibida/.test(textoMin);
   if(!esGasto && !esIngreso) return null; // no se pudo determinar el tipo, se omite
   const tipo = esGasto ? "gasto" : "ingreso";
 
@@ -2635,6 +2646,8 @@ function resumirCorreoBCP(textoOriginal, tipo){
   if(/transferen|transferiste|transfirieron/.test(t))
                               return {icono:"📲", titulo: tipo==="ingreso" ? "Transferencia recibida" : "Transferencia enviada"};
   if(/pagaste|pago /.test(t)) return {icono:"💳", titulo:"Pago realizado"};
+  if(/dep[oó]sito/.test(t))  return {icono:"🏧", titulo:"Depósito recibido"};
+  if(/recibiste/.test(t))    return {icono:"💰", titulo:"Dinero recibido"};
   // Sin patrón reconocido: usa las primeras palabras de la oración original.
   const corto = (textoOriginal || "").slice(0, 34).trim();
   return {icono: tipo==="ingreso" ? "💰" : "💸", titulo: corto + (textoOriginal && textoOriginal.length > 34 ? "…" : "")};
@@ -2650,8 +2663,12 @@ function parsearCorreoBCP(msg){
   const textoCompleto = `${asunto}\n${cuerpo}`;
   const textoMin = textoCompleto.toLowerCase();
 
-  const esGasto = /realizaste un retiro|realizaste un consumo|realizaste una transferencia|pagaste/.test(textoMin);
-  const esIngreso = /recibiste|te transfirieron/.test(textoMin);
+  // "generaste" cubre los correos de "Retiro Sin Tarjeta" (Banca Móvil),
+  // que no dicen "realizaste un retiro" sino "Generaste un código...".
+  // \s+ en vez de espacio literal: defensa extra por si algún correo
+  // trae un espacio no-estándar que normalizarEspacios() no atrapó.
+  const esGasto = /realizaste\s+un\s+retiro|realizaste\s+un\s+consumo|realizaste\s+una\s+transferencia|generaste|pagaste/.test(textoMin);
+  const esIngreso = /recibiste|te\s+transfirieron/.test(textoMin);
   if(!esGasto && !esIngreso) return null;
   const tipo = esGasto ? "gasto" : "ingreso";
 
