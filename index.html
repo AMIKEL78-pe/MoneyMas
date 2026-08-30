@@ -2734,12 +2734,17 @@ async function buscarCorreosBCP(){
   toggleMostrarLoadingBCP(true);
 
   try{
-    // 1) Base de búsqueda: además de las palabras clave por si el cuerpo/
-    //    asunto varía, se agrega el remitente REAL exacto que confirmaste
-    //    en tu bandeja ("BCP Notificaciones <notificaciones@notificacionesbcp.com.pe>").
-    //    Con from: explícito no dependemos solo de que la palabra "BCP"
-    //    aparezca en el texto — cualquier correo de ese remitente entra sí o sí.
-    const queryBase = 'from:notificaciones@notificacionesbcp.com.pe OR BCP OR "BCP Notificaciones" OR "Realizaste un consumo" OR "Realizaste un retiro" OR "Realizaste una transferencia" OR "Transferencia a Terceros" OR "Transferencia a Otros Bancos" OR "Retiro Sin Tarjeta" OR "Recibiste"';
+    // 1) Se simplifica DRÁSTICAMENTE la búsqueda: en la prueba anterior,
+    //    mezclar from:... adentro de un OR con 10 términos sueltos hizo que
+    //    Gmail devolviera puro ruido (correos que matcheaban "Recibiste" de
+    //    forma genérica) y NINGUNO del remitente real, pese a tener el
+    //    from: explícito ahí adentro. Gmail no siempre aplica bien un
+    //    operador (from:) cuando está mezclado con muchas palabras sueltas
+    //    dentro de un mismo grupo OR. La solución: dejar que from: sea el
+    //    ÚNICO criterio de búsqueda — es el dato más confiable que tenemos
+    //    (lo confirmaste vos mismo con un correo real), y ya filtramos y
+    //    clasificamos el contenido después con parsearCorreoBCP().
+    const queryBase = 'from:notificaciones@notificacionesbcp.com.pe';
 
     // 2) Fechas: after: es inclusivo, before: es EXCLUSIVO en Gmail, por
     //    eso a "fin" se le suma 1 día. Si el usuario deja los campos
@@ -2754,9 +2759,7 @@ async function buscarCorreosBCP(){
       filtroFechas += ` before:${fmt(finExclusivo)}`;
     }
 
-    // El OR va entre paréntesis para que Gmail no confunda su precedencia
-    // al combinarlo con after:/before: (son términos AND implícitos).
-    const queryFinal = `(${queryBase})${filtroFechas}`.trim();
+    const queryFinal = `${queryBase}${filtroFechas}`.trim();
     console.log("Consulta Gmail API:", queryFinal);
 
     // 3) Paginación real: antes solo se pedía UNA página (20 o 50 resultados)
