@@ -366,6 +366,18 @@
 
   /* Tabs (reused by Informes y Movimientos) */
   .tabs{display:flex;gap:6px;margin-bottom:20px;}
+  .selector-mes-anio{
+    width:100%;
+    min-height:var(--touch-min);
+    padding:0 16px;
+    margin:-12px 0 20px;
+    border-radius:14px;
+    border:1.5px solid var(--borde);
+    background:var(--blanco);
+    font-size:13.5px;
+    font-weight:600;
+    color:var(--gris-oscuro);
+  }
   .tab{
     flex:1;
     min-height:var(--touch-min);
@@ -725,6 +737,7 @@
       <div class="tab" data-p="semana" onclick="cambiarPeriodoMov('semana')">Semana</div>
       <div class="tab active" data-p="mes" onclick="cambiarPeriodoMov('mes')">Mes</div>
     </div>
+    <input type="month" id="mov-mes-selector" class="selector-mes-anio" onchange="cambiarMesMovimientos(this.value)">
     <div id="lista-movimientos"></div>
   </div>
 
@@ -761,6 +774,7 @@
       <div class="tab" data-periodo="semana" onclick="cambiarPeriodo('semana')">Semana</div>
       <div class="tab active" data-periodo="mes" onclick="cambiarPeriodo('mes')">Mes</div>
     </div>
+    <input type="month" id="inf-mes-selector" class="selector-mes-anio" onchange="cambiarMesInformes(this.value)">
 
     <div class="donut-wrap">
       <div class="donut" id="donut">
@@ -826,7 +840,7 @@
     <div id="lista-recurrentes"></div>
     <button class="btn-secondary" onclick="abrirModal('modal-recurrente')">+ Añadir pago recurrente</button>
 
-    <div class="section-title">Seguimiento de uso del presupuesto</div>
+    <div class="section-title">Desglose de pagos fijos este mes</div>
     <div id="lista-seguimiento"></div>
   </div>
 
@@ -1326,7 +1340,7 @@ function inicioSemana(d){
   r.setHours(0,0,0,0);
   return r;
 }
-function filtrarPorPeriodo(periodo){
+function filtrarPorPeriodo(periodo, mesOverride, anioOverride){
   const ahora = new Date();
   return transacciones.filter(t=>{
     if(periodo==="dia"){
@@ -1336,18 +1350,36 @@ function filtrarPorPeriodo(periodo){
       const ini = inicioSemana(ahora);
       return t.fecha >= ini;
     }
-    return t.fecha.getMonth()===ahora.getMonth() && t.fecha.getFullYear()===ahora.getFullYear();
+    const mes = (mesOverride !== undefined && mesOverride !== null) ? mesOverride : ahora.getMonth();
+    const anio = (anioOverride !== undefined && anioOverride !== null) ? anioOverride : ahora.getFullYear();
+    return t.fecha.getMonth()===mes && t.fecha.getFullYear()===anio;
   });
 }
 
 /* ---------- PANTALLA: MOVIMIENTOS ---------- */
+let mesMovimientos = new Date().getMonth();
+let anioMovimientos = new Date().getFullYear();
+
 function cambiarPeriodoMov(p){
   periodoMovimientos = p;
   document.querySelectorAll("#screen-movimientos .tab").forEach(t=>t.classList.toggle("active", t.dataset.p===p));
+  const selector = document.getElementById("mov-mes-selector");
+  if(selector) selector.style.display = p==="mes" ? "block" : "none";
+  renderMovimientos();
+}
+function cambiarMesMovimientos(valor){
+  if(!valor) return;
+  const [anio, mes] = valor.split("-").map(Number);
+  anioMovimientos = anio;
+  mesMovimientos = mes - 1; // <input type="month"> da 1-12, Date usa 0-11
   renderMovimientos();
 }
 function renderMovimientos(){
-  const txs = filtrarPorPeriodo(periodoMovimientos).sort((a,b)=>b.fecha-a.fecha);
+  const selector = document.getElementById("mov-mes-selector");
+  if(selector && !selector.value){
+    selector.value = `${anioMovimientos}-${String(mesMovimientos+1).padStart(2,"0")}`;
+  }
+  const txs = filtrarPorPeriodo(periodoMovimientos, mesMovimientos, anioMovimientos).sort((a,b)=>b.fecha-a.fecha);
   const wrap = document.getElementById("lista-movimientos");
   wrap.innerHTML = "";
   if(txs.length===0){
@@ -1477,14 +1509,30 @@ function renderGraficoSaldo(){
   `;
 }
 
+let mesInformes = new Date().getMonth();
+let anioInformes = new Date().getFullYear();
+
 function cambiarPeriodo(p){
   periodoActivo = p;
   document.querySelectorAll("#screen-informes .tab").forEach(t=>t.classList.toggle("active", t.dataset.periodo===p));
+  const selector = document.getElementById("inf-mes-selector");
+  if(selector) selector.style.display = p==="mes" ? "block" : "none";
+  renderInformes();
+}
+function cambiarMesInformes(valor){
+  if(!valor) return;
+  const [anio, mes] = valor.split("-").map(Number);
+  anioInformes = anio;
+  mesInformes = mes - 1; // <input type="month"> da 1-12, Date usa 0-11
   renderInformes();
 }
 function renderInformes(){
   renderGraficoSaldo();
-  const txs = filtrarPorPeriodo(periodoActivo);
+  const selector = document.getElementById("inf-mes-selector");
+  if(selector && !selector.value){
+    selector.value = `${anioInformes}-${String(mesInformes+1).padStart(2,"0")}`;
+  }
+  const txs = filtrarPorPeriodo(periodoActivo, mesInformes, anioInformes);
   const gastos = txs.filter(t=>t.tipo==="gasto");
   const ingresos = txs.filter(t=>t.tipo==="ingreso");
   const totalGastos = gastos.reduce((a,t)=>a+t.monto,0);
@@ -1636,9 +1684,8 @@ function eliminarTransaccion(id, refrescarMov){
 
 /* ---------- EXPORTAR PDF (Informes) ---------- */
 function exportarPDF(){
-  const ahora = new Date();
-  const periodoTxt = MESES[ahora.getMonth()] + " " + ahora.getFullYear();
-  const txsMes = filtrarPorPeriodo("mes").sort((a,b)=>a.fecha-b.fecha);
+  const periodoTxt = MESES[mesInformes] + " " + anioInformes;
+  const txsMes = filtrarPorPeriodo("mes", mesInformes, anioInformes).sort((a,b)=>a.fecha-b.fecha);
   const gastos = txsMes.filter(t=>t.tipo==="gasto");
   const ingresos = txsMes.filter(t=>t.tipo==="ingreso");
   const totalGastos = gastos.reduce((a,t)=>a+t.monto,0);
@@ -1714,10 +1761,13 @@ function aplicaEsteMes(r){
 }
 function renderPresupuesto(){
   document.getElementById("meta-input").value = metaMensual.toFixed(0);
-  const txsMes = filtrarPorPeriodo("mes").filter(t=>t.tipo==="gasto");
-  const gastadoReal = txsMes.reduce((a,t)=>a+t.monto,0);
-  const gastadoRecurrentes = recurrentes.filter(aplicaEsteMes).reduce((a,r)=>a+r.monto,0);
-  const gastado = gastadoReal + gastadoRecurrentes;
+
+  // El presupuesto se calcula SOLO con "Mis pagos fijos (recurrentes)" —
+  // los gastos e ingresos registrados en Movimientos ya NO se suman acá.
+  // (Antes se combinaban ambos; ahora Presupuesto es exclusivamente el
+  // seguimiento de tus pagos fijos contra la meta mensual.)
+  const recurrentesDelMes = recurrentes.filter(aplicaEsteMes);
+  const gastado = recurrentesDelMes.reduce((a,r)=>a+r.monto,0);
   const pctReal = metaMensual>0 ? (gastado/metaMensual)*100 : 0;
   const pct = Math.min(100, pctReal);
   const fill = document.getElementById("budget-fill-lg");
@@ -1732,7 +1782,7 @@ function renderPresupuesto(){
   rEl.classList.toggle("neg", restante<0);
   document.getElementById("budget-gastado").textContent = "S/. " + gastado.toFixed(2);
   document.getElementById("budget-gastado-detalle").textContent =
-    gastadoRecurrentes>0 ? `S/. ${gastadoReal.toFixed(2)} en gastos + S/. ${gastadoRecurrentes.toFixed(2)} en pagos fijos` : "";
+    recurrentesDelMes.length + " de " + recurrentes.length + " pago(s) fijo(s) aplican este mes";
 
   // Recurrentes
   const wrap = document.getElementById("lista-recurrentes");
@@ -1766,22 +1816,22 @@ function renderPresupuesto(){
     wrap.appendChild(row);
   });
 
-  // Seguimiento por categoría (ranking relativo al mayor gasto)
-  const porCategoria = {};
-  txsMes.forEach(t=>{ porCategoria[t.categoria] = (porCategoria[t.categoria]||0)+t.monto; });
-  const entries = Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]);
+  // Desglose de los pagos fijos que aplican este mes (ranking relativo al
+  // más caro). Antes rankeaba por categoría de los gastos de Movimientos;
+  // ahora que el presupuesto es solo pagos fijos, rankea por cada pago.
+  const entries = recurrentesDelMes.map(r => [r.nombre, r.monto]).sort((a,b)=>b[1]-a[1]);
   const max = entries.length ? entries[0][1] : 0;
   const segWrap = document.getElementById("lista-seguimiento");
   segWrap.innerHTML = "";
   if(entries.length===0){
-    segWrap.innerHTML = '<div class="tx-empty">Sin gastos registrados este mes</div>';
+    segWrap.innerHTML = '<div class="tx-empty">Ningún pago fijo aplica este mes</div>';
   }
-  entries.forEach(([cat,val])=>{
+  entries.forEach(([nombre,val])=>{
     const pctBar = max>0 ? (val/max)*100 : 0;
     const item = document.createElement("div");
     item.className = "cat-track-item";
     item.innerHTML = `
-      <div class="cat-track-row"><span>${cat}</span><span class="amt">S/. ${val.toFixed(2)}</span></div>
+      <div class="cat-track-row"><span>${nombre}</span><span class="amt">S/. ${val.toFixed(2)}</span></div>
       <div class="progress-track"><div class="progress-fill" style="width:${pctBar}%"></div></div>
     `;
     segWrap.appendChild(item);
