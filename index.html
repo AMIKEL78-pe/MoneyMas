@@ -378,6 +378,9 @@
     font-weight:600;
     color:var(--gris-oscuro);
   }
+  .pdf-rango-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px;}
+  .pdf-rango-row label{font-size:10px;color:var(--gris-medio);display:block;margin-bottom:3px;font-weight:600;}
+  .pdf-rango-row input{margin-top:0;}
   .tab{
     flex:1;
     min-height:var(--touch-min);
@@ -810,8 +813,18 @@
       </div>
     </div>
 
+    <div class="pdf-rango-row">
+      <div>
+        <label>Desde</label>
+        <input type="date" id="pdf-fecha-inicio">
+      </div>
+      <div>
+        <label>Hasta</label>
+        <input type="date" id="pdf-fecha-fin">
+      </div>
+    </div>
     <button class="btn-pdf" onclick="exportarPDF()">
-      📄 Exportar reporte mensual (PDF)
+      📄 Exportar reporte en PDF
     </button>
 
     <div class="section-title">Movimientos recientes</div>
@@ -1541,6 +1554,15 @@ function renderInformes(){
   if(selector && !selector.value){
     selector.value = `${anioInformes}-${String(mesInformes+1).padStart(2,"0")}`;
   }
+  const inputInicioPdf = document.getElementById("pdf-fecha-inicio");
+  const inputFinPdf = document.getElementById("pdf-fecha-fin");
+  if(inputInicioPdf && !inputInicioPdf.value){
+    inputInicioPdf.value = `${anioInformes}-${String(mesInformes+1).padStart(2,"0")}-01`;
+  }
+  if(inputFinPdf && !inputFinPdf.value){
+    const ultimoDia = new Date(anioInformes, mesInformes+1, 0).getDate();
+    inputFinPdf.value = `${anioInformes}-${String(mesInformes+1).padStart(2,"0")}-${String(ultimoDia).padStart(2,"0")}`;
+  }
   const txs = filtrarPorPeriodo(periodoActivo, mesInformes, anioInformes);
   const gastos = txs.filter(t=>t.tipo==="gasto");
   const ingresos = txs.filter(t=>t.tipo==="ingreso");
@@ -1693,8 +1715,27 @@ function eliminarTransaccion(id, refrescarMov){
 
 /* ---------- EXPORTAR PDF (Informes) ---------- */
 function exportarPDF(){
-  const periodoTxt = MESES[mesInformes] + " " + anioInformes;
-  const txsMes = filtrarPorPeriodo("mes", mesInformes, anioInformes).sort((a,b)=>a.fecha-b.fecha);
+  // Si el usuario no tocó los campos de fecha, se usan por defecto el
+  // primer y último día del mes que está viendo en pantalla (mesInformes/
+  // anioInformes) — pero se puede elegir cualquier rango manualmente.
+  const inputInicio = document.getElementById("pdf-fecha-inicio");
+  const inputFin = document.getElementById("pdf-fecha-fin");
+  if(!inputInicio.value) inputInicio.value = `${anioInformes}-${String(mesInformes+1).padStart(2,"0")}-01`;
+  if(!inputFin.value){
+    const ultimoDia = new Date(anioInformes, mesInformes+1, 0).getDate();
+    inputFin.value = `${anioInformes}-${String(mesInformes+1).padStart(2,"0")}-${String(ultimoDia).padStart(2,"0")}`;
+  }
+  const fechaInicio = new Date(inputInicio.value + "T00:00:00");
+  const fechaFin = new Date(inputFin.value + "T23:59:59");
+  if(fechaInicio > fechaFin){
+    alert('La fecha "Desde" no puede ser posterior a "Hasta".');
+    return;
+  }
+
+  const periodoTxt = fechaInicio.toLocaleDateString("es-PE") + " – " + fechaFin.toLocaleDateString("es-PE");
+  const txsMes = transacciones
+    .filter(t => t.fecha >= fechaInicio && t.fecha <= fechaFin)
+    .sort((a,b)=>a.fecha-b.fecha);
   const gastos = txsMes.filter(t=>t.tipo==="gasto");
   const ingresos = txsMes.filter(t=>t.tipo==="ingreso");
   const totalGastos = gastos.reduce((a,t)=>a+t.monto,0);
@@ -1724,7 +1765,8 @@ function exportarPDF(){
   <style>
     body{font-family:Arial,Helvetica,sans-serif;color:#1F2937;padding:32px;}
     h1{color:#2563EB;margin-bottom:0;}
-    .sub{color:#9CA3AF;margin-top:4px;margin-bottom:24px;}
+    .sub{color:#9CA3AF;margin-top:4px;margin-bottom:4px;}
+    .aviso{color:#9CA3AF;font-size:11px;margin-bottom:24px;}
     .resumen{display:flex;gap:16px;margin-bottom:28px;}
     .card{flex:1;border:1px solid #E5E7EB;border-radius:10px;padding:14px;}
     .card .l{font-size:12px;color:#9CA3AF;}
@@ -1736,11 +1778,12 @@ function exportarPDF(){
   </style></head>
   <body>
     <h1>MoneyMas</h1>
-    <div class="sub">Reporte mensual: ${periodoTxt}</div>
+    <div class="sub">Reporte del período: ${periodoTxt}</div>
+    <div class="aviso">"Saldo neto" es el resultado de este período (ingresos − gastos), no el saldo actual de tus cuentas — para eso revisa "Saldo Total" en Inicio.</div>
     <div class="resumen">
       <div class="card"><div class="l">Total ingresos</div><div class="v" style="color:#16A34A;">S/. ${totalIngresos.toFixed(2)}</div></div>
       <div class="card"><div class="l">Total gastos</div><div class="v" style="color:#DC2626;">S/. ${totalGastos.toFixed(2)}</div></div>
-      <div class="card"><div class="l">Saldo neto</div><div class="v" style="color:#2563EB;">S/. ${neto.toFixed(2)}</div></div>
+      <div class="card"><div class="l">Saldo neto del período</div><div class="v" style="color:#2563EB;">S/. ${neto.toFixed(2)}</div></div>
     </div>
     <h2>Detalle de movimientos</h2>
     <table><thead><tr><th>Fecha</th><th>Categoría</th><th>Cuenta</th><th style="text-align:right;">Monto</th></tr></thead><tbody>${filas || '<tr><td colspan="4">Sin movimientos</td></tr>'}</tbody></table>
