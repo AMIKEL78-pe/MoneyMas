@@ -924,6 +924,8 @@
       </div>
       <button class="btn-secondary" style="margin-top:12px;" onclick="buscarCorreosBCP()" id="btn-buscar-bcp">🔎 Buscar correos BCP</button>
       <div class="hint" id="bcp-busqueda-detalle" style="margin-top:8px;"></div>
+      <button class="btn-secondary" style="margin-top:10px;font-size:11.5px;padding:10px 0;" onclick="reintentarCorreosOmitidos()">↺ Reintentar correos ya revisados</button>
+      <div class="hint" style="margin-top:4px;">Úsalo si un correo real no aparece: puede haber quedado descartado por una corrección anterior del detector.</div>
     </div>
 
     <div class="tool-card">
@@ -2472,7 +2474,11 @@ async function buscarYProcesarCorreos(token){
     const msg = await msgResp.json();
 
     const resultado = parsearCorreoTransaccion(msg);
-    procesados.add(m.id); // se marca como procesado aunque no se haya podido importar, para no reintentarlo cada vez
+    // ⚠️ NO se marca como procesado todavía: si el parser lo rechaza (sea
+    // porque de verdad no es una transacción, o porque el parser tiene un
+    // bug que se corrige más adelante), el correo debe poder reintentarse
+    // en la próxima sincronización — no quedar bloqueado para siempre.
+    // Solo se marca como procesado más abajo, cuando SÍ se logra importar.
 
     if(!resultado){ omitidos++; continue; }
 
@@ -2496,6 +2502,7 @@ async function buscarYProcesarCorreos(token){
       nota: resultado.nota
     });
     cuenta.saldo += resultado.tipo === "ingreso" ? resultado.monto : -resultado.monto;
+    procesados.add(m.id); // recién ahora: se importó de verdad
     importados++;
   }
 
@@ -2754,6 +2761,24 @@ function existeTransaccionSimilar(fecha, monto){
     Math.abs(t.monto - monto) < 0.005 &&
     t.fecha.toDateString() === fecha.toDateString()
   );
+}
+
+// Vacía la lista de "correos ya procesados". Un correo entra a esa lista
+// solo cuando SE IMPORTÓ de verdad (ver la corrección en buscarYProcesarCorreos
+// y en importarSeleccionadosBCP), así que esto no reimporta nada dos veces
+// — pero antes de esa corrección, un correo podía quedar marcado como
+// "procesado" aunque el parser lo hubiera rechazado por error, bloqueándolo
+// para siempre. Este botón permite que esos correos vuelvan a evaluarse.
+function reintentarCorreosOmitidos(){
+  const cantidadActual = JSON.parse(localStorage.getItem(CLAVE_GMAIL_PROCESADOS) || "[]").length;
+  if(cantidadActual === 0){
+    alert("No hay correos marcados como revisados — no hace falta reintentar nada.");
+    return;
+  }
+  if(!confirm(`Esto va a "olvidar" ${cantidadActual} correo(s) que quedaron marcados como revisados. Los que ya importaste como movimientos NO se duplican (eso lo evita la fecha+monto), pero los que fueron rechazados por error van a poder reintentarse. ¿Continuar?`)) return;
+  localStorage.removeItem(CLAVE_GMAIL_PROCESADOS);
+  const detalle = document.getElementById("bcp-busqueda-detalle");
+  if(detalle) detalle.textContent = "Listo — volvé a tocar \"Buscar correos BCP\" para reintentar.";
 }
 
 function toggleMostrarLoadingBCP(cargando){
