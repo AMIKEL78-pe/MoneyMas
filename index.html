@@ -2439,14 +2439,24 @@ function sincronizarGmailAhora(){
 // Llama a la Gmail API: busca correos de BCP/Yape, descarta los ya
 // procesados, descarga cada uno completo y lo pasa por el parser.
 async function buscarYProcesarCorreos(token){
-  const q = 'from:bcp.com.pe OR from:yape.com.pe OR subject:Yapeaste OR subject:Transferencia';
-  const listaResp = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=25`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if(!listaResp.ok) throw new Error("Gmail API respondió " + listaResp.status + " (¿token sin permisos o expirado?)");
-  const listaJson = await listaResp.json();
-  const mensajes = listaJson.messages || [];
+  // Remitentes agrupados solo con from: (mismo criterio que la búsqueda de
+  // BCP: mezclar from: con subject:/keywords sueltos rompe el operador).
+  const q = 'from:(notificaciones@notificacionesbcp.com.pe OR notificacionesbcp@bcp.com.pe OR notificaciones@bcp.com.pe OR yape.com.pe)';
+
+  let mensajes = [];
+  let pageToken = null;
+  const TOPE_SEGURIDAD = 200;
+  do{
+    const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
+    url.searchParams.set("q", q);
+    url.searchParams.set("maxResults", "100");
+    if(pageToken) url.searchParams.set("pageToken", pageToken);
+    const listaResp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if(!listaResp.ok) throw new Error("Gmail API respondió " + listaResp.status + " (¿token sin permisos o expirado?)");
+    const listaJson = await listaResp.json();
+    mensajes = mensajes.concat(listaJson.messages || []);
+    pageToken = listaJson.nextPageToken || null;
+  } while(pageToken && mensajes.length < TOPE_SEGURIDAD);
 
   const procesados = new Set(JSON.parse(localStorage.getItem(CLAVE_GMAIL_PROCESADOS) || "[]"));
   let importados = 0, omitidos = 0;
@@ -2603,7 +2613,13 @@ const MESES_ES = {enero:0,febrero:1,marzo:2,abril:3,mayo:4,junio:5,julio:6,agost
 // (ej. "22 de agosto de 2026 - 07:18 PM"). Si no la encuentra o no puede
 // interpretarla, usa internalDate (la fecha real de recepción en Gmail).
 function parsearFechaCorreoBCP(texto, internalDate){
-  const m = texto.match(/(\d{1,2})\s+de\s+([a-zA-Zé]+)\s+de\s+(\d{4})(?:\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM))?/i);
+  // BCP usa AL MENOS dos plantillas de fecha distintas según el tipo de
+  // correo:
+  //   "01 de agosto de 2026 - 05:54 PM"        (con "de", AM/PM sin puntos)
+  //   "Martes, 28 Julio 2026 - 12:34 A. M."    (sin "de", con "A. M." con puntos)
+  // "de" es opcional en ambos lugares, y el AM/PM acepta con o sin puntos
+  // ("AM", "A.M.", "A. M.") para cubrir las dos plantillas con un solo regex.
+  const m = texto.match(/(\d{1,2})\s+(?:de\s+)?([a-zA-Zé]+)\s+(?:de\s+)?(\d{4})(?:\s*-\s*(\d{1,2}):(\d{2})\s*([AaPp])\.?\s*\.?[Mm]\.?)?/i);
   if(m){
     const dia = parseInt(m[1], 10);
     const mesTexto = m[2].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // quita tildes
@@ -2612,9 +2628,9 @@ function parsearFechaCorreoBCP(texto, internalDate){
     if(mes !== undefined){
       let hora = m[4] ? parseInt(m[4], 10) : 0;
       const min = m[5] ? parseInt(m[5], 10) : 0;
-      const ampm = m[6] ? m[6].toUpperCase() : null;
-      if(ampm === "PM" && hora < 12) hora += 12;
-      if(ampm === "AM" && hora === 12) hora = 0;
+      const ampm = m[6] ? m[6].toUpperCase() : null; // solo la letra "A" o "P"
+      if(ampm === "P" && hora < 12) hora += 12;
+      if(ampm === "A" && hora === 12) hora = 0;
       return new Date(anio, mes, dia, hora, min);
     }
   }
@@ -2635,27 +2651,43 @@ function formatearFechaCorta(fecha){
   return `${dia} ${mes}, ${String(hora).padStart(2,"0")}:${min} ${ampm}`;
 }
 
-// Convierte la oración larga extraída del correo (ej. "Realizaste un
-// retiro de S/ 160.00 con tu Tarjeta de Débito BCP en un Cajero BCP.")
-// en un ícono + título corto para la tarjeta compacta.
+// Tabla única de clasificación: cada correo BCP se identifica por su tipo
+// de operación. Antes la clasificación (gasto/ingreso) y el título/ícono
+// para la tarjeta compacta vivían en dos funciones separadas que podían
+// desincronizarse; ahora es una sola fuente de verdad.
+// El ORDEN importa: se revisa de más específico a más genérico (ej. "pago
+// de servicios" antes que el genérico "pago realizado").
+const PATRONES_BCP = [
+  { tipo:"gasto",    nombre:"Pago de servicios",         icono:"🧾", regex:/pago\s+de\s+servicios?/ },
+  { tipo:"gasto",    nombre:"Retiro sin tarjeta",         icono:"🏧", regex:/retiro\s+sin\s+tarjeta|generaste.*c[oó]digo/ },
+  { tipo:"gasto",    nombre:"Retiro en cajero",           icono:"🏧", regex:/realizaste\s+un\s+retiro/ },
+  { tipo:"gasto",    nombre:"Consumo con tarjeta",        icono:"💳", regex:/realizaste\s+un\s+consumo/ },
+  { tipo:"gasto",    nombre:"Transferencia a otros bancos", icono:"📲", regex:/transferencia\s+a\s+otros\s+bancos|transferencia\s+interbancaria/ },
+  { tipo:"gasto",    nombre:"Transferencia a terceros",   icono:"📲", regex:/transferencia\s+a\s+terceros|realizaste\s+una\s+transferencia/ },
+  { tipo:"gasto",    nombre:"Yape enviado",               icono:"📱", regex:/yapeaste|realizaste\s+un\s+yapeo|env[ií]o\s+de\s+yapeo/ },
+  { tipo:"gasto",    nombre:"Pago realizado",             icono:"💳", regex:/constancia\s+de\s+pago|pago\s+realizado|pagaste/ },
+  { tipo:"ingreso",  nombre:"Depósito recibido",          icono:"🏧", regex:/te\s+realizaron\s+un\s+dep[oó]sito|recibiste\s+un\s+dep[oó]sito|dep[oó]sito\s+recibido/ },
+  { tipo:"ingreso",  nombre:"Transferencia recibida",     icono:"📲", regex:/te\s+transfirieron|recibiste\s+una\s+transferencia/ },
+  { tipo:"ingreso",  nombre:"Yape recibido",              icono:"📱", regex:/recepci[oó]n\s+de\s+yapeo|recibiste\s+un\s+yapeo/ },
+  { tipo:"ingreso",  nombre:"Dinero recibido",            icono:"💰", regex:/recibiste/ }, // catch-all, va al final a propósito
+];
+
+// Convierte la oración larga extraída del correo en un ícono + título corto
+// para la tarjeta compacta. Se mantiene como función aparte (en vez de
+// devolverlo directo desde parsearCorreoBCP) porque también la usa la
+// pantalla de previsualización al re-renderizar sin volver a parsear.
 function resumirCorreoBCP(textoOriginal, tipo){
   const t = (textoOriginal || "").toLowerCase();
-  if(/retiro/.test(t))       return {icono:"🏧", titulo:"Retiro de efectivo"};
-  if(/consumo/.test(t))      return {icono:"💳", titulo:"Consumo con tarjeta"};
-  if(/yape/.test(t))         return {icono:"📲", titulo: tipo==="ingreso" ? "Yape recibido" : "Yape enviado"};
-  if(/transferen|transferiste|transfirieron/.test(t))
-                              return {icono:"📲", titulo: tipo==="ingreso" ? "Transferencia recibida" : "Transferencia enviada"};
-  if(/pagaste|pago /.test(t)) return {icono:"💳", titulo:"Pago realizado"};
-  if(/dep[oó]sito/.test(t))  return {icono:"🏧", titulo:"Depósito recibido"};
-  if(/recibiste/.test(t))    return {icono:"💰", titulo:"Dinero recibido"};
+  const match = PATRONES_BCP.find(p => p.regex.test(t));
+  if(match) return {icono: match.icono, titulo: match.nombre};
   // Sin patrón reconocido: usa las primeras palabras de la oración original.
   const corto = (textoOriginal || "").slice(0, 34).trim();
   return {icono: tipo==="ingreso" ? "💰" : "💸", titulo: corto + (textoOriginal && textoOriginal.length > 34 ? "…" : "")};
 }
 
-// Parser específico de correos BCP (palabras clave y formato de monto
-// distintos a los de Yape). ⚠️ Igual que el otro parser: son patrones
-// razonables según lo descrito, ajústalos si tus correos reales difieren.
+// Parser específico de correos BCP. ⚠️ Los 8 tipos cubiertos son un
+// modelo razonable según las frases reales que confirmaste — si BCP
+// cambia su plantilla o aparece una variante nueva, ajustá PATRONES_BCP.
 function parsearCorreoBCP(msg){
   const headers = msg.payload.headers || [];
   const asunto = (headers.find(h => h.name === "Subject") || {}).value || "";
@@ -2663,21 +2695,27 @@ function parsearCorreoBCP(msg){
   const textoCompleto = `${asunto}\n${cuerpo}`;
   const textoMin = textoCompleto.toLowerCase();
 
-  // "generaste" cubre los correos de "Retiro Sin Tarjeta" (Banca Móvil),
-  // que no dicen "realizaste un retiro" sino "Generaste un código...".
-  // \s+ en vez de espacio literal: defensa extra por si algún correo
-  // trae un espacio no-estándar que normalizarEspacios() no atrapó.
-  const esGasto = /realizaste\s+un\s+retiro|realizaste\s+un\s+consumo|realizaste\s+una\s+transferencia|generaste|pagaste/.test(textoMin);
-  const esIngreso = /recibiste|te\s+transfirieron/.test(textoMin);
-  if(!esGasto && !esIngreso) return null;
-  const tipo = esGasto ? "gasto" : "ingreso";
+  const patron = PATRONES_BCP.find(p => p.regex.test(textoMin));
+  if(!patron) return null;
+  const tipo = patron.tipo;
 
   // Monto: busca "Total retirado S/ 160.00" primero (más específico),
   // si no aparece cae al primer "S/ 160.00" que encuentre en el cuerpo.
   const matchTotal = cuerpo.match(/Total\s+\w+\s+S\/\.?\s?([\d,]+\.\d{2})/i);
-  const matchGenerico = cuerpo.match(/S\/\.?\s?([\d,]+\.\d{2})/);
-  const matchMonto = matchTotal || matchGenerico;
-  if(!matchMonto) return null;
+  const matchSoles = cuerpo.match(/S\/\.?\s?([\d,]+\.\d{2})/);
+  const matchMonto = matchTotal || matchSoles;
+
+  if(!matchMonto){
+    // Sin monto en soles reconocible. La app no soporta cuentas en otra
+    // moneda — si el correo trae un monto en USD, se detecta y se avisa
+    // en la consola, pero NO se importa: mezclar USD con un saldo que es
+    // implícitamente en soles corrompería el total en silencio.
+    const matchUSD = cuerpo.match(/(?:USD|US\$|\$)\s?([\d,]+\.\d{2})/i);
+    if(matchUSD){
+      console.log("Correo con monto en USD detectado (moneda no soportada, no se importa):", matchUSD[0]);
+    }
+    return null;
+  }
   const monto = parseFloat(matchMonto[1].replace(/,/g, ""));
   if(!monto || monto <= 0) return null;
 
@@ -2691,12 +2729,21 @@ function parsearCorreoBCP(msg){
   const valorMonto = matchMonto[1]; // ej. "160.00" o "2,119.00", sin el prefijo ni "S/"
   const candidatas = oraciones.filter(o => o.includes(valorMonto));
   const conVerboAccion = candidatas.filter(o => /realizaste|generaste|recibiste|pagaste|transferiste/i.test(o));
-  const oracionConMonto = (conVerboAccion.length ? conVerboAccion : candidatas).sort((a, b) => a.length - b.length)[0];
-  const concepto = (oracionConMonto || cuerpo.slice(0, 120)).trim();
+  // Solo se arma el concepto a partir de una oración cuando ESA oración
+  // tiene un verbo de acción (es decir, es lenguaje natural real). En
+  // correos de tabla ("Doc. pago: - Vencimiento: ... Importe: ...") ni
+  // el fragmento más corto sirve — parece oración por casualidad (algún
+  // punto de abreviatura como "Doc." corta ahí) pero sigue siendo un
+  // pedazo de tabla. En esos casos se usa directo el nombre del tipo de
+  // operación ya clasificado arriba, que siempre es correcto y legible.
+  const concepto = (conVerboAccion.length
+    ? conVerboAccion.sort((a, b) => a.length - b.length)[0]
+    : patron.nombre
+  ).trim();
 
   const fecha = parsearFechaCorreoBCP(cuerpo, msg.internalDate);
 
-  return { tipo, monto, nota: concepto, fecha };
+  return { tipo, monto, nota: concepto, fecha, tipoOperacion: patron.nombre, icono: patron.icono };
 }
 
 // Revisa si ya existe un movimiento con la misma fecha (mismo día) y
@@ -2734,17 +2781,14 @@ async function buscarCorreosBCP(){
   toggleMostrarLoadingBCP(true);
 
   try{
-    // 1) Se simplifica DRÁSTICAMENTE la búsqueda: en la prueba anterior,
-    //    mezclar from:... adentro de un OR con 10 términos sueltos hizo que
-    //    Gmail devolviera puro ruido (correos que matcheaban "Recibiste" de
-    //    forma genérica) y NINGUNO del remitente real, pese a tener el
-    //    from: explícito ahí adentro. Gmail no siempre aplica bien un
-    //    operador (from:) cuando está mezclado con muchas palabras sueltas
-    //    dentro de un mismo grupo OR. La solución: dejar que from: sea el
-    //    ÚNICO criterio de búsqueda — es el dato más confiable que tenemos
-    //    (lo confirmaste vos mismo con un correo real), y ya filtramos y
-    //    clasificamos el contenido después con parsearCorreoBCP().
-    const queryBase = 'from:notificaciones@notificacionesbcp.com.pe';
+    // 1) Remitentes agrupados SOLO con from: (sin mezclar palabras sueltas —
+    //    eso fue justo lo que rompió la búsqueda la vez pasada: Gmail no
+    //    aplica bien from: cuando está adentro de un OR con keywords).
+    //    notificaciones@notificacionesbcp.com.pe es el remitente real que
+    //    confirmaste con un correo tuyo; se agregan variantes de bcp.com.pe
+    //    como respaldo por si BCP usa otro dominio para ciertos avisos
+    //    (ej. pago de servicios), pero siempre dentro del mismo grupo from:.
+    const queryBase = 'from:(notificaciones@notificacionesbcp.com.pe OR notificacionesbcp@bcp.com.pe OR notificaciones@bcp.com.pe)';
 
     // 2) Fechas: after: es inclusivo, before: es EXCLUSIVO en Gmail, por
     //    eso a "fin" se le suma 1 día. Si el usuario deja los campos
@@ -2822,15 +2866,13 @@ async function buscarCorreosBCP(){
         continue;
       }
 
-      const resumen = resumirCorreoBCP(resultado.nota, resultado.tipo);
-
       previewBCP.push({
         mensajeId: m.id,
         tipo: resultado.tipo,
         monto: resultado.monto,
         nota: resultado.nota,        // texto completo (oración extraída) — se muestra en el detalle expandible
-        titulo: resumen.titulo,      // título corto para la tarjeta compacta
-        icono: resumen.icono,
+        titulo: resultado.tipoOperacion, // título corto: mismo patrón que ya clasificó tipo/ícono, sin re-adivinar
+        icono: resultado.icono,
         fecha: resultado.fecha,
         categoria: resultado.tipo === "gasto" ? "Pagos Varios" : "Otros ingresos",
         seleccionado: true,
