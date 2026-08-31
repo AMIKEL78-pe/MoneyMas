@@ -648,6 +648,15 @@
   .estado-btn{min-height:var(--touch-min);display:inline-flex;align-items:center;padding:0 16px;border-radius:18px;border:2px solid var(--gris-claro);background:var(--gris-claro);color:var(--gris-medio);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;}
   .estado-btn.pagado{border-color:var(--verde);color:var(--verde);background:var(--verde-bg);}
   .estado-btn.pendiente{border-color:var(--rojo);color:var(--rojo);background:var(--rojo-bg);}
+  .btn-agregar-mov{
+    width:100%;min-height:38px;margin-top:10px;border-radius:12px;border:none;
+    background:var(--azul-900);color:#fff;font-size:11.5px;font-weight:700;cursor:pointer;
+  }
+  .btn-agregado-mov{
+    width:100%;min-height:38px;margin-top:10px;border-radius:12px;
+    border:1.5px solid var(--verde);background:var(--verde-bg);color:var(--verde);
+    font-size:11px;font-weight:700;cursor:pointer;
+  }
   .participante-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
   .participante-grid input, .participante-grid select{margin:0;padding:10px 11px;font-size:12px;}
   .participante-grid label{font-size:10px;color:var(--gris-medio);display:block;margin-bottom:3px;font-weight:600;}
@@ -2073,7 +2082,7 @@ let juntaActivaId = null;
 let rondaActivaId = null;
 
 function nuevoPago(){
-  return { estado:"pendiente", monto:0, medio:MEDIOS_PAGO[0], cuentaId:cuentas[0]?cuentas[0].id:null, fecha:new Date() };
+  return { estado:"pendiente", monto:0, medio:MEDIOS_PAGO[0], cuentaId:cuentas[0]?cuentas[0].id:null, fecha:new Date(), transaccionId:null };
 }
 function getPago(junta, ronda, idx){
   if(!ronda.pagos[idx]) ronda.pagos[idx] = nuevoPago();
@@ -2199,6 +2208,11 @@ function renderDetalleJunta(){
         <div><label>Medio usado</label><select onchange="actualizarPago(${idx},'medio',this.value)">${mediosOpts}</select></div>
         <div><label>Cuenta destino</label><select onchange="actualizarPago(${idx},'cuentaId',this.value)">${cuentasOpts}</select></div>
       </div>
+      ${pago.estado==="pagado" ? (
+        pago.transaccionId
+          ? `<button class="btn-agregado-mov" onclick="quitarPagoDeMovimientos(${idx})">✓ Agregado a Movimientos · quitar</button>`
+          : `<button class="btn-agregar-mov" onclick="agregarPagoAMovimientos(${idx})">+ Agregar a Movimientos</button>`
+      ) : ""}
     `;
     wrap.appendChild(card);
   });
@@ -2214,6 +2228,60 @@ function toggleEstadoPago(idx){
   const pago = getPago(j, ronda, idx);
   pago.estado = pago.estado==="pagado" ? "pendiente" : "pagado";
   if(pago.estado==="pagado" && pago.monto===0) pago.monto = j.cuota;
+  renderDetalleJunta();
+}
+// Lleva el pago de un participante de la junta a Movimientos como un
+// Ingreso real: usa la fecha registrada, la cuenta destino que ya
+// elegiste en la fila (Yape, BCP Ahorros, etc.) y la categoría "Otros
+// ingresos". Suma al saldo de esa cuenta y por lo tanto al Saldo Total.
+// Guarda el ID de la transacción creada en el propio pago (pago.transaccionId)
+// para no agregarlo dos veces y para poder deshacerlo con el botón de abajo.
+function agregarPagoAMovimientos(idx){
+  const j = juntas.find(x=>x.id===juntaActivaId);
+  const ronda = j.rondas.find(r=>r.id===rondaActivaId);
+  const pago = getPago(j, ronda, idx);
+  if(pago.transaccionId) return; // ya se agregó, evita duplicar
+
+  const cuenta = cuentas.find(c=>c.id===pago.cuentaId);
+  if(!cuenta){ alert("Elige una cuenta destino válida en este participante antes de agregarlo a Movimientos."); return; }
+  if(!pago.monto || pago.monto <= 0){ alert("El monto pagado debe ser mayor a 0."); return; }
+
+  const nombreParticipante = j.participantes[idx];
+  const tx = {
+    id: nextId++,
+    tipo: "ingreso",
+    monto: pago.monto,
+    categoria: "Otros ingresos",
+    cuentaId: pago.cuentaId,
+    fecha: new Date(pago.fecha),
+    nota: `Junta "${j.nombre}" · ${nombreParticipante} (${pago.medio})`
+  };
+  transacciones.unshift(tx);
+  cuenta.saldo += pago.monto;
+  pago.transaccionId = tx.id;
+
+  renderInicio(); renderInformes(); renderMovimientos(); renderPresupuesto();
+  renderDetalleJunta();
+}
+// Deshace lo anterior: borra la transacción vinculada y resta el monto
+// de la cuenta, por si lo agregaste por error o dos veces por distintas
+// juntas/rondas.
+function quitarPagoDeMovimientos(idx){
+  const j = juntas.find(x=>x.id===juntaActivaId);
+  const ronda = j.rondas.find(r=>r.id===rondaActivaId);
+  const pago = getPago(j, ronda, idx);
+  if(!pago.transaccionId) return;
+  if(!confirm("¿Quitar este pago de Movimientos? Se revertirá el saldo de la cuenta.")) return;
+
+  const tx = transacciones.find(t=>t.id===pago.transaccionId);
+  if(tx){
+    const cuenta = cuentas.find(c=>c.id===tx.cuentaId);
+    if(cuenta) cuenta.saldo -= tx.monto;
+    transacciones = transacciones.filter(t=>t.id!==pago.transaccionId);
+  }
+  pago.transaccionId = null;
+
+  renderInicio(); renderInformes(); renderMovimientos(); renderPresupuesto();
   renderDetalleJunta();
 }
 function actualizarPago(idx, campo, valor){
