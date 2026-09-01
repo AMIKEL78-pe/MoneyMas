@@ -398,6 +398,14 @@
   .tab.active{background:var(--azul);color:#fff;}
 
   .donut-wrap{display:flex;justify-content:center;padding:10px 0 4px;}
+  .donut-tabs{display:flex;gap:6px;margin-top:6px;}
+  .donut-tab{
+    flex:1;min-height:38px;display:flex;align-items:center;justify-content:center;
+    border-radius:12px;background:var(--gris-claro);color:var(--gris-medio);
+    font-size:12.5px;font-weight:700;cursor:pointer;
+  }
+  .donut-tab.active[data-vista="gasto"]{background:var(--rojo-bg);color:var(--rojo);}
+  .donut-tab.active[data-vista="ingreso"]{background:var(--verde-bg);color:var(--verde);}
   .donut{
     width:170px;height:170px;border-radius:50%;
     display:flex;align-items:center;justify-content:center;
@@ -788,10 +796,14 @@
     </div>
     <input type="month" id="inf-mes-selector" class="selector-mes-anio" onchange="cambiarMesInformes(this.value)">
 
+    <div class="donut-tabs">
+      <div class="donut-tab active" data-vista="gasto" onclick="cambiarVistaDonut('gasto')">Gastos</div>
+      <div class="donut-tab" data-vista="ingreso" onclick="cambiarVistaDonut('ingreso')">Ingresos</div>
+    </div>
     <div class="donut-wrap">
       <div class="donut" id="donut">
         <div class="donut-hole">
-          <div class="lbl">Gastos</div>
+          <div class="lbl" id="donut-lbl">Gastos</div>
           <div class="val" id="donut-total">S/. 0</div>
         </div>
       </div>
@@ -1533,6 +1545,14 @@ function renderGraficoSaldo(){
 
 let mesInformes = new Date().getMonth();
 let anioInformes = new Date().getFullYear();
+let vistaDonutInformes = "gasto"; // "gasto" o "ingreso" — qué donut se muestra
+
+function cambiarVistaDonut(vista){
+  vistaDonutInformes = vista;
+  document.querySelectorAll(".donut-tab").forEach(t=>t.classList.toggle("active", t.dataset.vista===vista));
+  document.getElementById("donut-lbl").textContent = vista==="gasto" ? "Gastos" : "Ingresos";
+  renderInformes();
+}
 
 function cambiarPeriodo(p){
   periodoActivo = p;
@@ -1576,17 +1596,19 @@ function renderInformes(){
   document.getElementById("sum-neto-card").classList.toggle("negativo", neto<0);
 
   const porCategoria = {};
-  gastos.forEach(t=>{ porCategoria[t.categoria] = (porCategoria[t.categoria]||0) + t.monto; });
+  const txsVista = vistaDonutInformes==="gasto" ? gastos : ingresos;
+  const totalVista = vistaDonutInformes==="gasto" ? totalGastos : totalIngresos;
+  txsVista.forEach(t=>{ porCategoria[t.categoria] = (porCategoria[t.categoria]||0) + t.monto; });
   const entries = Object.entries(porCategoria);
   const donut = document.getElementById("donut");
   const legend = document.getElementById("legend");
   legend.innerHTML = "";
-  if(entries.length===0 || totalGastos===0){
+  if(entries.length===0 || totalVista===0){
     donut.style.background = "var(--gris-claro)";
   } else {
     let acc = 0;
     const stops = entries.map(([cat,val],i)=>{
-      const pct = (val/totalGastos)*100;
+      const pct = (val/totalVista)*100;
       const color = coloresDonut[i % coloresDonut.length];
       const s = `${color} ${acc}% ${acc+pct}%`;
       acc += pct;
@@ -1597,7 +1619,7 @@ function renderInformes(){
     });
     donut.style.background = `conic-gradient(${stops.join(",")})`;
   }
-  document.getElementById("donut-total").textContent = "S/. " + totalGastos.toFixed(0);
+  document.getElementById("donut-total").textContent = "S/. " + totalVista.toFixed(0);
 
   const lista = document.getElementById("lista-transacciones");
   lista.innerHTML = "";
